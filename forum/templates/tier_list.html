@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block title %}Tier List des Légendes{% endblock %}
+
+{% block content %}
+<div class="brawl-page-header">
+    <h1 class="brawl-title">🏆 Brawlhalla Tier List</h1>
+    <p class="brawl-subtitle">Classement de toutes les légendes originales dans la méta actuelle.</p>
+</div>
+
+<div class="tier-list-container">
+    <!-- S TIER -->
+    <div class="tier-row">
+        <div class="tier-label tier-s">S</div>
+        <div class="tier-content">
+            <div class="legend-badge">Mordex</div>
+            <div class="legend-badge">Nix</div>
+            <div class="legend-badge">Tezca</div>
+            <div class="legend-badge">Diana</div>
+            <div class="legend-badge">Bödvar</div>
+            <div class="legend-badge">Koji</div>
+            <div class="legend-badge">Hattori</div>
+            <div class="legend-badge">Wu Shang</div>
+            <div class="legend-badge">Mirage</div>
+            <div class="legend-badge">Loki</div>
+            <div class="legend-badge">Val</div>
+            <div class="legend-badge">Red Raptor</div>
+            <div class="legend-badge">Petra</div>
+            <div class="legend-badge">Artemis</div>
+        </div>
+    </div>
+    
+    <!-- A TIER -->
+    <div class="tier-row">
+        <div class="tier-label tier-a">A</div>
+        <div class="tier-content">
+            <div class="legend-badge">Asuri</div>
+            <div class="legend-badge">Brynn</div>
+            <div class="legend-badge">Cross</div>
+            <div class="legend-badge">Reno</div>
+            <div class="legend-badge">Orion</div>
+            <div class="legend-badge">Scarlet</div>
+            <div class="legend-badge">Teros</div>
+            <div class="legend-badge">Faith</div>
+            <div class="legend-badge">Jaeyun</div>
+            <div class="legend-badge">Lucien</div>
+            <div class="legend-badge">Kaya</div>
+            <div class="legend-badge">Thor</div>
+            <div class="legend-badge">Munin</div>
+            <div class="legend-badge">Seven</div>
+            <div class="legend-badge">Vivi</div>
+            <div class="legend-badge">Thea</div>
+        </div>
+    </div>
+
+    <!-- B TIER -->
+    <div class="tier-row">
+        <div class="tier-label tier-b">B</div>
+        <div class="tier-content">
+            <div class="legend-badge">Ada</div>
+            <div class="legend-badge">Cassidy</div>
+            <div class="legend-badge">Kor</div>
+            <div class="legend-badge">Mako</div>
+            <div class="legend-badge">Onyx</div>
+            <div class="legend-badge">Volkov</div>
+            <div class="legend-badge">Sir Roland</div>
+            <div class="legend-badge">Sentinel</div>
+            <div class="legend-badge">Ragnir</div>
+            <div class="legend-badge">Yumiko</div>
+            <div class="legend-badge">Ember</div>
+            <div class="legend-badge">Caspian</div>
+            <div class="legend-badge">Jhala</div>
+            <div class="legend-badge">Jiro</div>
+            <div class="legend-badge">Zariel</div>
+            <div class="legend-badge">Arcadia</div>
+        </div>
+    </div>
+
+    <!-- C TIER -->
+    <div class="tier-row">
+        <div class="tier-label tier-c">C</div>
+        <div class="tier-content">
+            <div class="legend-badge">Lord Vraxx</div>
+            <div class="legend-badge">Gnash</div>
+            <div class="legend-badge">Queen Nai</div>
+            <div class="legend-badge">Thatch</div>
+            <div class="legend-badge">Barraza</div>
+            <div class="legend-badge">Azoth</div>
+            <div class="legend-badge">Isaiah</div>
+            <div class="legend-badge">Dusk</div>
+            <div class="legend-badge">Lin Fei</div>
+            <div class="legend-badge">Magyar</div>
+            <div class="legend-badge">Sidra</div>
+            <div class="legend-badge">Ulgrim</div>
+            <div class="legend-badge">Vector</div>
+            <div class="legend-badge">Xull</div>
+        </div>
+    </div>
+</div>
+
+<style>
+.brawl-page-header { text-align: center; margin-bottom: 40px; }
+.brawl-title { font-size: 2.5rem; color: var(--gold); text-transform: uppercase; letter-spacing: 2px; text-shadow: 0 0 10px rgba(241, 196, 15, 0.4); }
+.brawl-subtitle { color: var(--text-secondary); font-size: 1.1rem; }
+.tier-list-container { display: flex; flex-direction: column; gap: 8px; background: rgba(0,0,0,0.4); padding: 16px; border-radius: 12px; border: 1px solid var(--border); }
+.tier-row { display: flex; background: var(--bg-card); border-radius: 8px; overflow: hidden; align-items: stretch; border: 1px solid var(--border-light); }
+.tier-label { display: flex; align-items: center; justify-content: center; width: 80px; font-size: 2rem; font-weight: 900; color: #000; text-shadow: 1px 1px 0 rgba(255,255,255,0.4); flex-shrink: 0; }
+.tier-s { background: #ff7f7f; }
+.tier-a { background: #ffbf7f; }
+.tier-b { background: #ffff7f; }
+.tier-c { background: #7fff7f; }
+.tier-content { padding: 16px; display: flex; flex-wrap: wrap; gap: 10px; flex: 1; align-items: center; }
+.legend-badge { background: var(--bg-secondary); padding: 8px 16px; border-radius: 20px; font-size: 0.9rem; font-weight: 600; color: var(--text-primary); border: 1px solid var(--border); transition: all 0.2s ease; cursor: default; }
+.legend-badge:hover { background: var(--accent); color: #000; border-color: var(--accent); transform: scale(1.05); }
+</style>
+{% endblock %}

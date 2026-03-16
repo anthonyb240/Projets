@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}{{ category.name }}{% endblock %}
+
+{% block content %}
+<!-- Breadcrumb -->
+<nav class="breadcrumb">
+    <a href="{{ url_for('index') }}">Accueil</a>
+    <span class="breadcrumb-sep">›</span>
+    <span class="breadcrumb-current">{{ category.icon }} {{ category.name }}</span>
+</nav>
+
+<!-- Category Header -->
+<div class="page-header" style="--accent: {{ category.color }}">
+    <div class="page-header-content">
+        <span class="page-header-icon">{{ category.icon }}</span>
+        <div>
+            <h1 class="page-header-title">{{ category.name }}</h1>
+            <p class="page-header-desc">{{ category.description }}</p>
+        </div>
+    </div>
+    {% if current_user.is_authenticated %}
+        <a href="{{ url_for('new_topic', category_id=category.id) }}" class="btn btn-primary">
+            ✏️ Nouveau sujet
+        </a>
+    {% endif %}
+</div>
+
+<!-- Topics list -->
+<div class="topics-list">
+    {% if topics.items %}
+        {% for t in topics.items %}
+        <a href="{{ url_for('topic', topic_id=t.id) }}" class="topic-row">
+            <div class="topic-avatar" style="background: {{ t.author.avatar_color }}">
+                {{ t.author.initials }}
+            </div>
+            <div class="topic-info">
+                <h3 class="topic-title">{{ t.title }}</h3>
+                <div class="topic-meta-row">
+                    <span class="topic-author">par <strong>{{ t.author.username }}</strong></span>
+                    <span class="topic-time">{{ t.created_at|timeago }}</span>
+                </div>
+            </div>
+            <div class="topic-stats">
+                <div class="topic-stat">
+                    <span class="topic-stat-number">{{ t.reply_count }}</span>
+                    <span class="topic-stat-label">réponses</span>
+                </div>
+            </div>
+        </a>
+        {% endfor %}
+    {% else %}
+        <div class="empty-state">
+            <span class="empty-icon">🍃</span>
+            <p>Aucun sujet pour l'instant.</p>
+            {% if current_user.is_authenticated %}
+                <a href="{{ url_for('new_topic', category_id=category.id) }}" class="btn btn-primary">
+                    Créer le premier sujet
+                </a>
+            {% else %}
+                <p class="empty-hint">Connectez-vous pour créer un sujet.</p>
+            {% endif %}
+        </div>
+    {% endif %}
+</div>
+
+<!-- Pagination -->
+{% if topics.pages > 1 %}
+<div class="pagination">
+    {% if topics.has_prev %}
+        <a href="{{ url_for('category', category_id=category.id, page=topics.prev_num) }}" class="page-link">← Précédent</a>
+    {% endif %}
+    {% for p in topics.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+        {% if p %}
+            <a href="{{ url_for('category', category_id=category.id, page=p) }}"
+               class="page-link {% if p == topics.page %}active{% endif %}">{{ p }}</a>
+        {% else %}
+            <span class="page-ellipsis">…</span>
+        {% endif %}
+    {% endfor %}
+    {% if topics.has_next %}
+        <a href="{{ url_for('category', category_id=category.id, page=topics.next_num) }}" class="page-link">Suivant →</a>
+    {% endif %}
+</div>
+{% endif %}
+{% endblock %}

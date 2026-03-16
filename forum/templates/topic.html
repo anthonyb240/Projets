@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}{{ topic.title }}{% endblock %}
+
+{% block content %}
+<!-- Breadcrumb -->
+<nav class="breadcrumb">
+    <a href="{{ url_for('index') }}">Accueil</a>
+    <span class="breadcrumb-sep">›</span>
+    <a href="{{ url_for('category', category_id=topic.category.id) }}">{{ topic.category.icon }} {{ topic.category.name }}</a>
+    <span class="breadcrumb-sep">›</span>
+    <span class="breadcrumb-current">{{ topic.title }}</span>
+</nav>
+
+<!-- Topic Header -->
+<div class="topic-header-card">
+    <div class="topic-header-top">
+        <h1 class="topic-header-title">{{ topic.title }}</h1>
+        {% if current_user.is_authenticated and current_user.id == topic.user_id %}
+            <form method="POST" action="{{ url_for('delete_topic', topic_id=topic.id) }}" class="inline-form"
+                  onsubmit="return confirm('Supprimer ce sujet et toutes ses réponses ?')">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-danger btn-sm">🗑️ Supprimer</button>
+            </form>
+        {% endif %}
+    </div>
+    <!-- Original post -->
+    <div class="post-card post-original">
+        <div class="post-sidebar">
+            <a href="{{ url_for('profile', username=topic.author.username) }}" class="post-avatar" style="background: {{ topic.author.avatar_color }}">
+                {{ topic.author.initials }}
+            </a>
+            <a href="{{ url_for('profile', username=topic.author.username) }}" class="post-username">{{ topic.author.username }}</a>
+            <span class="post-date">{{ topic.created_at|timeago }}</span>
+        </div>
+        <div class="post-body">
+            <div class="post-content">{{ topic.content }}</div>
+        </div>
+    </div>
+</div>
+
+<!-- Replies -->
+{% if posts.items %}
+<div class="replies-section">
+    <h2 class="section-title">💬 Réponses ({{ topic.reply_count }})</h2>
+    {% for post in posts.items %}
+    <div class="post-card">
+        <div class="post-sidebar">
+            <a href="{{ url_for('profile', username=post.author.username) }}" class="post-avatar" style="background: {{ post.author.avatar_color }}">
+                {{ post.author.initials }}
+            </a>
+            <a href="{{ url_for('profile', username=post.author.username) }}" class="post-username">{{ post.author.username }}</a>
+            <span class="post-date">{{ post.created_at|timeago }}</span>
+        </div>
+        <div class="post-body">
+            <div class="post-content">{{ post.content }}</div>
+            {% if current_user.is_authenticated and current_user.id == post.user_id %}
+                <form method="POST" action="{{ url_for('delete_post', post_id=post.id) }}" class="inline-form"
+                      onsubmit="return confirm('Supprimer cette réponse ?')">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn btn-danger btn-xs">🗑️ Supprimer</button>
+                </form>
+            {% endif %}
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+
+<!-- Pagination -->
+{% if posts.pages > 1 %}
+<div class="pagination">
+    {% if posts.has_prev %}
+        <a href="{{ url_for('topic', topic_id=topic.id, page=posts.prev_num) }}" class="page-link">← Précédent</a>
+    {% endif %}
+    {% for p in posts.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+        {% if p %}
+            <a href="{{ url_for('topic', topic_id=topic.id, page=p) }}"
+               class="page-link {% if p == posts.page %}active{% endif %}">{{ p }}</a>
+        {% else %}
+            <span class="page-ellipsis">…</span>
+        {% endif %}
+    {% endfor %}
+    {% if posts.has_next %}
+        <a href="{{ url_for('topic', topic_id=topic.id, page=posts.next_num) }}" class="page-link">Suivant →</a>
+    {% endif %}
+</div>
+{% endif %}
+
+<!-- Reply Form -->
+<div class="reply-form-section">
+    {% if current_user.is_authenticated %}
+        <h3 class="section-title">✍️ Répondre</h3>
+        <form method="POST" class="form-card">
+            {{ form.hidden_tag() }}
+            <div class="form-group">
+                {{ form.content(class="form-control form-textarea", placeholder="Écrivez votre réponse...", rows=5, id="reply-content") }}
+                {% for error in form.content.errors %}
+                    <span class="form-error">{{ error }}</span>
+                {% endfor %}
+            </div>
+            <div class="form-actions">
+                {{ form.submit(class="btn btn-primary") }}
+            </div>
+        </form>
+    {% else %}
+        <div class="login-prompt">
+            <p><a href="{{ url_for('login') }}">Connectez-vous</a> pour répondre à ce sujet.</p>
+        </div>
+    {% endif %}
+</div>
+{% endblock %}

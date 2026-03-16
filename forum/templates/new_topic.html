@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Nouveau sujet — {{ category.name }}{% endblock %}
+
+{% block content %}
+<!-- Breadcrumb -->
+<nav class="breadcrumb">
+    <a href="{{ url_for('index') }}">Accueil</a>
+    <span class="breadcrumb-sep">›</span>
+    <a href="{{ url_for('category', category_id=category.id) }}">{{ category.icon }} {{ category.name }}</a>
+    <span class="breadcrumb-sep">›</span>
+    <span class="breadcrumb-current">Nouveau sujet</span>
+</nav>
+
+<div class="form-page">
+    <div class="form-card form-card-wide">
+        <h1 class="form-title">✏️ Nouveau sujet</h1>
+        <p class="form-subtitle">dans <strong>{{ category.icon }} {{ category.name }}</strong></p>
+
+        <form method="POST">
+            {{ form.hidden_tag() }}
+
+            <div class="form-group">
+                <label class="form-label" for="title">{{ form.title.label.text }}</label>
+                {{ form.title(class="form-control", placeholder="Donnez un titre clair à votre sujet", id="title") }}
+                {% for error in form.title.errors %}
+                    <span class="form-error">{{ error }}</span>
+                {% endfor %}
+            </div>
+
+            <div class="form-group">
+                <label class="form-label" for="content">{{ form.content.label.text }}</label>
+                {{ form.content(class="form-control form-textarea", placeholder="Décrivez votre sujet en détail...", rows=8, id="content") }}
+                {% for error in form.content.errors %}
+                    <span class="form-error">{{ error }}</span>
+                {% endfor %}
+            </div>
+
+            <div class="form-actions">
+                <a href="{{ url_for('category', category_id=category.id) }}" class="btn btn-ghost">Annuler</a>
+                {{ form.submit(class="btn btn-primary") }}
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

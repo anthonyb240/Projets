@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% block title %}Valhalla Live Chat{% endblock %}
+
+{% block content %}
+<div class="chat-container">
+    <div class="chat-header">
+        <h2>💬 Valhalla Live Chat</h2>
+        <span class="live-indicator"></span>
+    </div>
+    
+    <div class="chat-messages" id="chat-messages">
+        <!-- Messages chargés via AJAX -->
+        <div class="chat-loading">Chargement des messages...</div>
+    </div>
+    
+    <div class="chat-input-area">
+        <form id="chat-form" onsubmit="sendMessage(event)">
+            <input type="text" id="chat-input" class="form-control" placeholder="Tapez votre message..." autocomplete="off" required>
+            <button type="submit" class="btn btn-primary" id="send-btn">Envoyer</button>
+        </form>
+    </div>
+</div>
+
+<style>
+.chat-container { display: flex; flex-direction: column; height: 75vh; max-height: 800px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
+.chat-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 24px; background: rgba(0,0,0,0.4); border-bottom: 1px solid var(--border-light); }
+.chat-header h2 { font-size: 1.25rem; margin: 0; }
+.live-indicator { width: 10px; height: 10px; background: var(--danger); border-radius: 50%; box-shadow: 0 0 10px var(--danger); animation: pulse 1.5s infinite; }
+@keyframes pulse { 0% { transform: scale(0.95); opacity: 0.5; } 50% { transform: scale(1.1); opacity: 1; } 100% { transform: scale(0.95); opacity: 0.5; } }
+.chat-messages { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
+.chat-message { display: flex; gap: 12px; }
+.chat-avatar { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.8rem; font-weight: bold; color: white; flex-shrink: 0; }
+.chat-msg-content { background: var(--bg-secondary); padding: 10px 14px; border-radius: 12px; border-top-left-radius: 2px; max-width: 80%; }
+.chat-msg-header { display: flex; align-items: baseline; gap: 8px; margin-bottom: 4px; }
+.chat-msg-username { font-weight: 700; font-size: 0.9rem; color: var(--accent-light); }
+.chat-msg-time { font-size: 0.7rem; color: var(--text-muted); }
+.chat-msg-text { font-size: 0.95rem; line-height: 1.4; word-break: break-word; }
+.chat-input-area { padding: 16px; background: rgba(0,0,0,0.2); border-top: 1px solid var(--border-light); }
+#chat-form { display: flex; gap: 12px; }
+#chat-form input { flex: 1; }
+.chat-loading { text-align: center; color: var(--text-muted); margin-top: 20px; font-style: italic; }
+</style>
+
+<script>
+const messagesContainer = document.getElementById('chat-messages');
+const chatInput = document.getElementById('chat-input');
+const sendBtn = document.getElementById('send-btn');
+let lastMessageCount = 0;
+
+function scrollToBottom() {
+    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+}
+
+function fetchMessages() {
+    fetch('{{ url_for("api_chat_messages") }}')
+        .then(response => response.json())
+        .then(data => {
+            if (data.messages) {
+                if (data.messages.length !== lastMessageCount || messagesContainer.innerHTML.includes('Chargement')) {
+                    messagesContainer.innerHTML = '';
+                    data.messages.forEach(msg => {
+                        const msgDiv = document.createElement('div');
+                        msgDiv.className = 'chat-message';
+                        msgDiv.innerHTML = `
+                            <div class="chat-avatar" style="background: ${msg.avatar_color}">${msg.initials}</div>
+                            <div class="chat-msg-content">
+                                <div class="chat-msg-header">
+                                    <span class="chat-msg-username">${msg.username}</span>
+                                    <span class="chat-msg-time">${msg.time}</span>
+                                </div>
+                                <div class="chat-msg-text">${msg.content}</div>
+                            </div>
+                        `;
+                        messagesContainer.appendChild(msgDiv);
+                    });
+                    scrollToBottom();
+                    lastMessageCount = data.messages.length;
+                }
+            }
+        });
+}
+
+function sendMessage(e) {
+    e.preventDefault();
+    const content = chatInput.value.trim();
+    if (!content) return;
+    
+    sendBtn.disabled = true;
+    fetch('{{ url_for("api_chat_messages") }}', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': '{{ csrf_token() }}' // WTForms n'est pas utilisé directement ici, on suppose que c'est ok ou on désactive CSRF pour cette route d'API
+        },
+        body: JSON.stringify({ content: content })
+    }).then(() => {
+        chatInput.value = '';
+        sendBtn.disabled = false;
+        fetchMessages();
+        chatInput.focus();
+    }).catch(err => {
+        console.error(err);
+        sendBtn.disabled = false;
+    });
+}
+
+// Polling toutes les 2 secondes
+setInterval(fetchMessages, 2000);
+// Premier chargement
+fetchMessages();
+</script>
+{% endblock %}

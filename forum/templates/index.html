@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Accueil{% endblock %}
+
+{% block content %}
+<!-- Hero Section -->
+<section class="hero">
+    <div class="hero-content">
+        <h1 class="hero-title">Bienvenue sur <span class="gradient-text">ForumFlask</span></h1>
+        <p class="hero-subtitle">Rejoignez la communauté, partagez vos idées et participez aux discussions.</p>
+        <div class="hero-stats">
+            <div class="stat-item">
+                <span class="stat-number">{{ total_topics }}</span>
+                <span class="stat-label">Sujets</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-number">{{ total_posts }}</span>
+                <span class="stat-label">Messages</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-number">{{ total_users }}</span>
+                <span class="stat-label">Membres</span>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Categories -->
+<section class="section">
+    <h2 class="section-title">📂 Catégories</h2>
+    <div class="categories-grid">
+        {% for cat in categories %}
+        <a href="{{ url_for('category', category_id=cat.id) }}" class="category-card" style="--accent: {{ cat.color }}">
+            <div class="category-icon">{{ cat.icon }}</div>
+            <div class="category-info">
+                <h3 class="category-name">{{ cat.name }}</h3>
+                <p class="category-desc">{{ cat.description }}</p>
+            </div>
+            <div class="category-meta">
+                <span class="meta-badge">{{ cat.topic_count }} sujets</span>
+                <span class="meta-badge">{{ cat.post_count }} messages</span>
+                {% if cat.last_activity %}
+                    <span class="meta-time">{{ cat.last_activity|timeago }}</span>
+                {% endif %}
+            </div>
+        </a>
+        {% endfor %}
+    </div>
+</section>
+{% endblock %}

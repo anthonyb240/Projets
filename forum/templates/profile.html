@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Profil de {{ user.username }}{% endblock %}
+
+{% block content %}
+<!-- Breadcrumb -->
+<nav class="breadcrumb">
+    <a href="{{ url_for('index') }}">Accueil</a>
+    <span class="breadcrumb-sep">›</span>
+    <span class="breadcrumb-current">Profil de {{ user.username }}</span>
+</nav>
+
+<!-- Profile Header -->
+<div class="profile-header">
+    <div class="profile-avatar-large" style="background: {{ user.avatar_color }}">
+        {{ user.initials }}
+    </div>
+    <div class="profile-info">
+        <h1 class="profile-name">{{ user.username }}</h1>
+        <div class="profile-meta">
+            <span class="profile-meta-item">📅 Membre depuis {{ user.created_at.strftime('%d/%m/%Y') }}</span>
+            <span class="profile-meta-item">📝 {{ user.post_count }} contributions</span>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Activity -->
+<div class="profile-sections">
+    <!-- Recent Topics -->
+    <div class="profile-section">
+        <h2 class="section-title">📋 Derniers sujets créés</h2>
+        {% if recent_topics %}
+            <div class="activity-list">
+                {% for t in recent_topics %}
+                <a href="{{ url_for('topic', topic_id=t.id) }}" class="activity-item">
+                    <div class="activity-icon" style="background: {{ t.category.color }}20; color: {{ t.category.color }}">
+                        {{ t.category.icon }}
+                    </div>
+                    <div class="activity-info">
+                        <span class="activity-title">{{ t.title }}</span>
+                        <span class="activity-meta">dans {{ t.category.name }} · {{ t.created_at|timeago }}</span>
+                    </div>
+                </a>
+                {% endfor %}
+            </div>
+        {% else %}
+            <p class="empty-hint">Aucun sujet créé.</p>
+        {% endif %}
+    </div>
+
+    <!-- Recent Posts -->
+    <div class="profile-section">
+        <h2 class="section-title">💬 Dernières réponses</h2>
+        {% if recent_posts %}
+            <div class="activity-list">
+                {% for p in recent_posts %}
+                <a href="{{ url_for('topic', topic_id=p.topic.id) }}" class="activity-item">
+                    <div class="activity-icon" style="background: {{ p.topic.category.color }}20; color: {{ p.topic.category.color }}">
+                        💬
+                    </div>
+                    <div class="activity-info">
+                        <span class="activity-title">{{ p.content[:80] }}{% if p.content|length > 80 %}…{% endif %}</span>
+                        <span class="activity-meta">dans {{ p.topic.title }} · {{ p.created_at|timeago }}</span>
+                    </div>
+                </a>
+                {% endfor %}
+            </div>
+        {% else %}
+            <p class="empty-hint">Aucune réponse publiée.</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
