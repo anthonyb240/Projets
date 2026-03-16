@@ -1,6 +1,6 @@
 """Initialize the database with default categories."""
 from app import app, db
-from models import Category
+from models import Category, User
 
 categories = [
     {
@@ -39,4 +39,17 @@ with app.app_context():
         print(f'[OK] {len(categories)} categories creees avec succes !')
     else:
         print('[INFO] Les categories existent deja.')
+        
+    if User.query.count() == 0:
+        admin_user = User(
+            username='admin',
+            email='admin@valhalla.fr',
+            avatar_color='#FDCB6E',
+            is_admin=True
+        )
+        admin_user.set_password('AdminBrawlhalla123!')
+        db.session.add(admin_user)
+        db.session.commit()
+        print('[OK] Compte administrateur cree : admin / AdminBrawlhalla123!')
+        
     print('[OK] Base de donnees initialisee.')

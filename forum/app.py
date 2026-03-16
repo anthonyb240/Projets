@@ -6,6 +6,7 @@ from config import Config
 from models import db, User, Category, Topic, Post, ChatMessage
 from forms import RegistrationForm, LoginForm, TopicForm, PostForm
 from datetime import datetime
+from utils import censor_text
 
 app = Flask(__name__)
 app.config.from_object(Config)
@@ -91,7 +92,7 @@ def topic(topic_id):
             flash('Connectez-vous pour répondre.', 'warning')
             return redirect(url_for('login'))
         post = Post(
-            content=form.content.data,
+            content=censor_text(form.content.data),
             user_id=current_user.id,
             topic_id=t.id
         )
@@ -109,11 +110,14 @@ def topic(topic_id):
 @login_required
 def new_topic(category_id):
     cat = Category.query.get_or_404(category_id)
+    if cat.name == 'Actualités & Patchs' and not current_user.is_admin:
+        abort(403)
+        
     form = TopicForm()
     if form.validate_on_submit():
         t = Topic(
-            title=form.title.data,
-            content=form.content.data,
+            title=censor_text(form.title.data),
+            content=censor_text(form.content.data),
             user_id=current_user.id,
             category_id=cat.id
         )
@@ -230,7 +234,7 @@ def api_chat_messages():
         if not data or not data.get('content'):
             return {'error': 'Message vide'}, 400
         
-        msg = ChatMessage(content=data['content'], user_id=current_user.id)
+        msg = ChatMessage(content=censor_text(data['content']), user_id=current_user.id)
         db.session.add(msg)
         db.session.commit()
         return {'status': 'success'}
