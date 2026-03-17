@@ -1,36 +1,55 @@
 """Initialize the database with default categories."""
 from app import app, db
-from models import Category, User
+from models import Category, User, UploadedFile
 
 categories = [
     {
-        'name': 'Actualités & Patchs',
-        'description': 'Sorties de légendes, équilibrages et annonces officielles',
-        'icon': '📰',
+        'name': 'Actualites & Patchs',
+        'description': 'Sorties de legendes, equilibrages et annonces officielles',
+        'icon': '\U0001f4f0',
         'color': '#F39C12'
     },
     {
-        'name': 'Discussion Générale',
-        'description': 'Discussions sur Brawlhalla, l\'esport, et la méta',
-        'icon': '⚔️',
+        'name': 'Discussion Generale',
+        'description': 'Discussions sur Brawlhalla, l\'esport, et la meta',
+        'icon': '\u2694\ufe0f',
         'color': '#3498DB'
     },
     {
         'name': 'Clips & Highlights',
         'description': 'Partagez vos meilleures actions et 0 to death !',
-        'icon': '🎬',
+        'icon': '\U0001f3ac',
         'color': '#E74C3C'
     },
     {
         'name': 'Entraide & Conseils',
         'description': 'Besoin d\'aide pour monter en Elo ? Demandez ici !',
-        'icon': '🤝',
+        'icon': '\U0001f91d',
         'color': '#2ECC71'
     }
 ]
 
 with app.app_context():
+    # Creer toutes les tables (y compris uploaded_file)
     db.create_all()
+
+    # Migration : ajouter la colonne avatar_file si elle n'existe pas
+    try:
+        import sqlite3
+        db_path = db.engine.url.database
+        if db_path:
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+            cursor.execute("PRAGMA table_info(user)")
+            columns = [col[1] for col in cursor.fetchall()]
+            if 'avatar_file' not in columns:
+                cursor.execute("ALTER TABLE user ADD COLUMN avatar_file VARCHAR(255)")
+                conn.commit()
+                print('[OK] Colonne avatar_file ajoutee a la table user.')
+            conn.close()
+    except Exception as e:
+        print(f'[INFO] Migration skip: {e}')
+
     if Category.query.count() == 0:
         for cat_data in categories:
             cat = Category(**cat_data)
@@ -39,7 +58,7 @@ with app.app_context():
         print(f'[OK] {len(categories)} categories creees avec succes !')
     else:
         print('[INFO] Les categories existent deja.')
-        
+
     if User.query.count() == 0:
         admin_user = User(
             username='admin',
@@ -51,5 +70,5 @@ with app.app_context():
         db.session.add(admin_user)
         db.session.commit()
         print('[OK] Compte administrateur cree : admin / AdminBrawlhalla123!')
-        
+
     print('[OK] Base de donnees initialisee.')

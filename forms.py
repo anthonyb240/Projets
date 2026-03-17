@@ -1,4 +1,5 @@
 from flask_wtf import FlaskForm
+from flask_wtf.file import FileField, FileAllowed
 from wtforms import StringField, PasswordField, TextAreaField, SubmitField
 from wtforms.validators import DataRequired, Email, EqualTo, Length, ValidationError
 from models import User
@@ -44,3 +45,8 @@ class PostForm(FlaskForm):
     content = TextAreaField('Votre réponse',
                             validators=[DataRequired(), Length(min=2)])
     submit = SubmitField('Répondre')
+
+
+class AvatarUploadForm(FlaskForm):
+    avatar = FileField('Photo de profil')
+    submit = SubmitField('Mettre à jour l\'avatar')

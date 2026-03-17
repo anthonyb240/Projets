@@ -13,6 +13,7 @@ class User(UserMixin, db.Model):
     email = db.Column(db.String(120), unique=True, nullable=False, index=True)
     password_hash = db.Column(db.String(256), nullable=False)
     avatar_color = db.Column(db.String(7), nullable=False)
+    avatar_file = db.Column(db.String(255), nullable=True)  # Chemin vers l'avatar uploadé
     is_admin = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -100,6 +101,18 @@ class Post(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     topic_id = db.Column(db.Integer, db.ForeignKey('topic.id'), nullable=False)
+
+
+class UploadedFile(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    original_name = db.Column(db.String(255), nullable=False)
+    saved_name = db.Column(db.String(255), nullable=False, unique=True)
+    content_type = db.Column(db.String(100), nullable=False)
+    file_size = db.Column(db.Integer, nullable=False)
+    uploaded_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+
+    uploader = db.relationship('User', backref=db.backref('uploaded_files', lazy='dynamic'))
 
 
 class ChatMessage(db.Model):

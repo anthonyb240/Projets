@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% block title %}Modifier l'avatar{% endblock %}
+
+{% block content %}
+<!-- Breadcrumb -->
+<nav class="breadcrumb">
+    <a href="{{ url_for('index') }}">Accueil</a>
+    <span class="breadcrumb-sep">›</span>
+    <a href="{{ url_for('profile', username=current_user.username) }}">Mon profil</a>
+    <span class="breadcrumb-sep">›</span>
+    <span class="breadcrumb-current">Modifier l'avatar</span>
+</nav>
+
+<div class="form-page">
+    <div class="form-card">
+        <h1 class="form-title">📷 Modifier mon avatar</h1>
+        <p class="form-subtitle">Uploadez une image pour personnaliser votre profil. Formats acceptés : JPG, PNG, GIF (max 5 MB).</p>
+
+        <!-- Prévisualisation -->
+        <div style="text-align: center; margin-bottom: 1.5rem;">
+            {% if current_user.avatar_file %}
+                <img src="{{ url_for('serve_upload', filename=current_user.avatar_file) }}"
+                     alt="Avatar actuel"
+                     style="width: 120px; height: 120px; border-radius: 50%; object-fit: cover; border: 3px solid var(--primary);"
+                     id="avatarPreview">
+            {% else %}
+                <div class="profile-avatar-large" style="background: {{ current_user.avatar_color }}; margin: 0 auto;" id="avatarDefault">
+                    {{ current_user.initials }}
+                </div>
+                <img src="" alt="Prévisualisation" style="display:none; width: 120px; height: 120px; border-radius: 50%; object-fit: cover; border: 3px solid var(--primary);" id="avatarPreview">
+            {% endif %}
+        </div>
+
+        <form method="POST" enctype="multipart/form-data" id="uploadForm">
+            {{ form.hidden_tag() }}
+
+            <div class="form-group">
+                <label for="avatar" class="form-label">Choisir une image</label>
+                {{ form.avatar(class="form-control", id="avatarInput", accept=".jpg,.jpeg,.png,.gif") }}
+                <small class="form-help" id="fileHelp">Formats autorisés : .jpg, .png, .gif uniquement.</small>
+                <small class="form-error" id="fileError" style="display:none; color: #e74c3c;"></small>
+            </div>
+
+            <div class="form-actions">
+                {{ form.submit(class="btn btn-primary") }}
+                <a href="{{ url_for('profile', username=current_user.username) }}" class="btn btn-secondary">Annuler</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<!-- Couche 1 : Validation côté client uniquement (JavaScript) -->
+<!-- Vulnérabilité : trivial à contourner en désactivant JS,   -->
+<!-- ou en interceptant la requête avec Burp Suite / curl.     -->
+<!-- ══════════════════════════════════════════════════════════ -->
+<script>
+    const allowedExtensions = ['jpg', 'jpeg', 'png', 'gif'];
+    const maxSize = 5 * 1024 * 1024; // 5 MB
+
+    document.getElementById('avatarInput').addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        const errorEl = document.getElementById('fileError');
+        const helpEl = document.getElementById('fileHelp');
+        const submitBtn = document.querySelector('input[type="submit"]');
+
+        errorEl.style.display = 'none';
+        helpEl.style.display = 'block';
+        submitBtn.disabled = false;
+
+        if (!file) return;
+
+        // Vérification de l'extension côté client
+        const ext = file.name.split('.').pop().toLowerCase();
+        if (!allowedExtensions.includes(ext)) {
+            errorEl.textContent = '❌ Extension non autorisée ! Seuls .jpg, .png et .gif sont acceptés.';
+            errorEl.style.display = 'block';
+            helpEl.style.display = 'none';
+            submitBtn.disabled = true;
+            e.target.value = '';
+            return;
+        }
+
+        // Vérification de la taille côté client
+        if (file.size > maxSize) {
+            errorEl.textContent = '❌ Fichier trop volumineux ! Maximum 5 MB.';
+            errorEl.style.display = 'block';
+            helpEl.style.display = 'none';
+            submitBtn.disabled = true;
+            e.target.value = '';
+            return;
+        }
+
+        // Vérification du type MIME côté client
+        const allowedMimes = ['image/jpeg', 'image/png', 'image/gif'];
+        if (!allowedMimes.includes(file.type)) {
+            errorEl.textContent = '❌ Ce fichier ne semble pas être une image valide.';
+            errorEl.style.display = 'block';
+            helpEl.style.display = 'none';
+            submitBtn.disabled = true;
+            e.target.value = '';
+            return;
+        }
+
+        // Prévisualisation
+        const reader = new FileReader();
+        reader.onload = function(ev) {
+            let preview = document.getElementById('avatarPreview');
+            let defaultAvatar = document.getElementById('avatarDefault');
+            preview.src = ev.target.result;
+            preview.style.display = 'inline-block';
+            if (defaultAvatar) defaultAvatar.style.display = 'none';
+        };
+        reader.readAsDataURL(file);
+    });
+
+    // Double vérification à la soumission
+    document.getElementById('uploadForm').addEventListener('submit', function(e) {
+        const input = document.getElementById('avatarInput');
+        if (!input.files || !input.files[0]) {
+            e.preventDefault();
+            const errorEl = document.getElementById('fileError');
+            errorEl.textContent = '❌ Veuillez sélectionner un fichier.';
+            errorEl.style.display = 'block';
+        }
+    });
+</script>
+{% endblock %}

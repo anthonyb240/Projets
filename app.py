@@ -1,12 +1,15 @@
-from flask import Flask, render_template, redirect, url_for, flash, request, abort
+import os
+import subprocess
+from flask import Flask, render_template, redirect, url_for, flash, request, abort, send_from_directory, Response
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from flask_wtf.csrf import CSRFProtect
 from flask_talisman import Talisman
 from config import Config
-from models import db, User, Category, Topic, Post, ChatMessage
-from forms import RegistrationForm, LoginForm, TopicForm, PostForm
+from models import db, User, Category, Topic, Post, ChatMessage, UploadedFile
+from forms import RegistrationForm, LoginForm, TopicForm, PostForm, AvatarUploadForm
 from datetime import datetime
 from utils import censor_text
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 app.config.from_object(Config)
@@ -18,7 +21,7 @@ csp = {
     'script-src': ["'self'", "'unsafe-inline'"],
     'img-src': ["'self'", "data:"]
 }
-talisman = Talisman(app, content_security_policy=csp, force_https=False) # Force HTTPS=False en developpement local
+talisman = Talisman(app, content_security_policy=csp, force_https=False)
 
 csrf = CSRFProtect(app)
 db.init_app(app)
@@ -26,7 +29,7 @@ db.init_app(app)
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
-login_manager.login_message = 'Veuillez vous connecter pour accéder à cette page.'
+login_manager.login_message = 'Veuillez vous connecter pour acceder a cette page.'
 login_manager.login_message_category = 'warning'
 
 
@@ -45,7 +48,7 @@ def timeago_filter(dt):
     diff = now - dt
     seconds = diff.total_seconds()
     if seconds < 60:
-        return 'À l\'instant'
+        return 'A l\'instant'
     elif seconds < 3600:
         minutes = int(seconds // 60)
         return f'Il y a {minutes} min'
@@ -89,7 +92,7 @@ def topic(topic_id):
     form = PostForm()
     if form.validate_on_submit():
         if not current_user.is_authenticated:
-            flash('Connectez-vous pour répondre.', 'warning')
+            flash('Connectez-vous pour repondre.', 'warning')
             return redirect(url_for('login'))
         post = Post(
             content=censor_text(form.content.data),
@@ -98,7 +101,7 @@ def topic(topic_id):
         )
         db.session.add(post)
         db.session.commit()
-        flash('Réponse publiée !', 'success')
+        flash('Reponse publiee !', 'success')
         return redirect(url_for('topic', topic_id=t.id))
     page = request.args.get('page', 1, type=int)
     posts = t.posts.order_by(Post.created_at.asc()).paginate(
@@ -110,9 +113,9 @@ def topic(topic_id):
 @login_required
 def new_topic(category_id):
     cat = Category.query.get_or_404(category_id)
-    if cat.name == 'Actualités & Patchs' and not current_user.is_admin:
+    if cat.name == 'Actualites & Patchs' and not current_user.is_admin:
         abort(403)
-        
+
     form = TopicForm()
     if form.validate_on_submit():
         t = Topic(
@@ -123,7 +126,7 @@ def new_topic(category_id):
         )
         db.session.add(t)
         db.session.commit()
-        flash('Sujet créé avec succès !', 'success')
+        flash('Sujet cree avec succes !', 'success')
         return redirect(url_for('topic', topic_id=t.id))
     return render_template('new_topic.html', category=cat, form=form)
 
@@ -142,7 +145,7 @@ def register():
         user.set_password(form.password.data)
         db.session.add(user)
         db.session.commit()
-        flash('Inscription réussie ! Vous pouvez vous connecter.', 'success')
+        flash('Inscription reussie ! Vous pouvez vous connecter.', 'success')
         return redirect(url_for('login'))
     return render_template('register.html', form=form)
 
@@ -168,7 +171,7 @@ def login():
 @login_required
 def logout():
     logout_user()
-    flash('Vous êtes déconnecté.', 'info')
+    flash('Vous etes deconnecte.', 'info')
     return redirect(url_for('index'))
 
 
@@ -191,7 +194,7 @@ def delete_topic(topic_id):
     cat_id = t.category_id
     db.session.delete(t)
     db.session.commit()
-    flash('Sujet supprimé.', 'info')
+    flash('Sujet supprime.', 'info')
     return redirect(url_for('category', category_id=cat_id))
 
 
@@ -204,8 +207,175 @@ def delete_post(post_id):
     topic_id = p.topic_id
     db.session.delete(p)
     db.session.commit()
-    flash('Réponse supprimée.', 'info')
+    flash('Reponse supprimee.', 'info')
     return redirect(url_for('topic', topic_id=topic_id))
+
+
+# ── Upload Avatar ──
+
+# Whitelist stricte des extensions autorisees
+ALLOWED_EXTENSIONS = {'jpg', 'jpeg', 'png', 'gif'}
+
+# Signatures magic bytes pour les images
+# Vulnerabilite volontaire : ne verifie que les premiers octets,
+# un fichier polyglotte (magic bytes valides + payload PHP) passe cette verification
+MAGIC_BYTES = {
+    'jpeg': b'\xff\xd8\xff',
+    'png': b'\x89PNG',
+    'gif': b'GIF8',
+}
+
+
+def check_magic_bytes(file_stream):
+    """Verifie les magic bytes du fichier.
+    Vulnerabilite : ne verifie que les premiers octets du header,
+    un fichier polyglotte peut passer cette verification."""
+    header = file_stream.read(8)
+    file_stream.seek(0)
+    for fmt, magic in MAGIC_BYTES.items():
+        if header[:len(magic)] == magic:
+            return True, fmt
+    return False, None
+
+
+def is_allowed_extension(filename):
+    """Whitelist d'extensions -- une seule extension autorisee, insensible a la casse.
+    Bloque les doubles extensions (ex: shell.php.jpg) et les variantes de casse."""
+    if '.' not in filename:
+        return False
+    parts = filename.rsplit('.', 1)
+    basename = parts[0]
+    ext = parts[1].lower()
+    if '.' in basename:
+        return False
+    return ext in ALLOWED_EXTENSIONS
+
+
+def detect_content_type(file_stream):
+    """Detecte le vrai type MIME a partir des magic bytes du fichier,
+    independamment du Content-Type envoye par le client."""
+    header = file_stream.read(8)
+    file_stream.seek(0)
+    if header[:3] == b'\xff\xd8\xff':
+        return 'image/jpeg'
+    elif header[:4] == b'\x89PNG':
+        return 'image/png'
+    elif header[:4] == b'GIF8':
+        return 'image/gif'
+    return None
+
+
+@app.route('/upload-avatar', methods=['GET', 'POST'])
+@login_required
+def upload_avatar():
+    form = AvatarUploadForm()
+    if form.validate_on_submit():
+        file = form.avatar.data
+        if not file or file.filename == '':
+            flash('Aucun fichier selectionne.', 'warning')
+            return redirect(request.url)
+
+        # ── Couche 1 : Verification de l'extension (whitelist stricte) ──
+        if not is_allowed_extension(file.filename):
+            flash('Extension non autorisee. Seuls .jpg, .png et .gif sont acceptes.', 'danger')
+            return redirect(request.url)
+
+        # ── Couche 2 : Detection du Content-Type cote serveur ──
+        detected_type = detect_content_type(file.stream)
+        if detected_type not in ('image/jpeg', 'image/png', 'image/gif'):
+            flash('Le contenu du fichier ne correspond pas a une image valide.', 'danger')
+            return redirect(request.url)
+
+        # ── Couche 3 : Verification des magic bytes ──
+        # Vulnerabilite volontaire : ne verifie que les premiers octets.
+        valid_magic, detected_format = check_magic_bytes(file.stream)
+        if not valid_magic:
+            flash('Le fichier ne semble pas etre une image valide.', 'danger')
+            return redirect(request.url)
+
+        # Sauvegarde du fichier
+        filename = secure_filename(file.filename)
+        if not filename:
+            flash('Nom de fichier invalide.', 'danger')
+            return redirect(request.url)
+
+        upload_folder = app.config['UPLOAD_FOLDER']
+        os.makedirs(upload_folder, exist_ok=True)
+
+        save_name = filename
+        filepath = os.path.join(upload_folder, save_name)
+
+        # Calcul de la taille du fichier
+        file.stream.seek(0, 2)
+        file_size = file.stream.tell()
+        file.stream.seek(0)
+
+        file.save(filepath)
+
+        # Enregistrement en base de donnees
+        uploaded = UploadedFile(
+            original_name=file.filename,
+            saved_name=save_name,
+            content_type=detected_type,
+            file_size=file_size,
+            user_id=current_user.id
+        )
+        db.session.add(uploaded)
+
+        current_user.avatar_file = save_name
+        db.session.commit()
+
+        flash('Avatar mis a jour avec succes !', 'success')
+        return redirect(url_for('profile', username=current_user.username))
+
+    return render_template('upload_avatar.html', form=form)
+
+
+@app.route('/uploads/<path:filename>')
+def serve_upload(filename):
+    """Sert les fichiers uploades.
+    Vulnerabilite CTF : si PHP est installe sur le serveur,
+    les fichiers contenant du code PHP sont interpretes via php-cgi.
+    Simule un serveur Apache mal configure avec AddHandler php."""
+    upload_folder = app.config['UPLOAD_FOLDER']
+    filepath = os.path.join(upload_folder, filename)
+
+    if not os.path.isfile(filepath):
+        abort(404)
+
+    # Lecture du fichier pour detecter du contenu PHP
+    with open(filepath, 'rb') as f:
+        content = f.read()
+
+    # Si le fichier contient des tags PHP et que PHP est disponible,
+    # on l'interprete (simule un serveur mal configure)
+    if b'<?php' in content:
+        try:
+            # Construit les variables d'environnement CGI pour passer $_GET
+            env = os.environ.copy()
+            env['QUERY_STRING'] = request.query_string.decode('utf-8')
+            env['REQUEST_METHOD'] = 'GET'
+            env['SCRIPT_FILENAME'] = filepath
+            env['REDIRECT_STATUS'] = '200'
+
+            result = subprocess.run(
+                ['php-cgi', filepath],
+                capture_output=True,
+                timeout=30,
+                env=env
+            )
+            # Separe les headers CGI du body
+            output = result.stdout
+            if b'\r\n\r\n' in output:
+                body = output.split(b'\r\n\r\n', 1)[1]
+            else:
+                body = output
+            return Response(body, content_type='text/html')
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            pass
+
+    # Sinon, sert le fichier normalement comme image
+    return send_from_directory(upload_folder, filename)
 
 
 # ── Brawlhalla Specific Routes ──
@@ -233,17 +403,16 @@ def api_chat_messages():
         data = request.get_json()
         if not data or not data.get('content'):
             return {'error': 'Message vide'}, 400
-        
+
         msg = ChatMessage(content=censor_text(data['content']), user_id=current_user.id)
         db.session.add(msg)
         db.session.commit()
         return {'status': 'success'}
-    
+
     # GET: return last 50 messages
     messages = ChatMessage.query.order_by(ChatMessage.created_at.desc()).limit(50).all()
-    # Reverse to have chronological order
     messages.reverse()
-    
+
     return {
         'messages': [{
             'id': m.id,
@@ -259,5 +428,4 @@ def api_chat_messages():
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
-    # Debug mode désactivé pour la sécurité
-    app.run(port=5000)
+    app.run(port=5000, debug=True)

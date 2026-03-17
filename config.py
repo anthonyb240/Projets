@@ -20,3 +20,8 @@ class Config:
     
     # Limitation de la taille des requêtes entrantes à 5 MB (Anti-DDos/Uploads massifs)
     MAX_CONTENT_LENGTH = 5 * 1024 * 1024
+
+    # Upload d'avatars
+    UPLOAD_FOLDER = os.path.join(basedir, 'static', 'uploads', 'avatars')
+    ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
+    BLOCKED_EXTENSIONS = {'php', 'exe', 'sh', 'bat', 'cmd', 'js'}  # Blacklist incomplète volontairement

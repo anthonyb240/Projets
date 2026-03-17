@@ -11,14 +11,24 @@
 
 <!-- Profile Header -->
 <div class="profile-header">
-    <div class="profile-avatar-large" style="background: {{ user.avatar_color }}">
-        {{ user.initials }}
-    </div>
+    {% if user.avatar_file %}
+        <img src="{{ url_for('serve_upload', filename=user.avatar_file) }}"
+             alt="Avatar de {{ user.username }}"
+             class="profile-avatar-img"
+             style="width: 80px; height: 80px; border-radius: 50%; object-fit: cover; border: 3px solid var(--primary);">
+    {% else %}
+        <div class="profile-avatar-large" style="background: {{ user.avatar_color }}">
+            {{ user.initials }}
+        </div>
+    {% endif %}
     <div class="profile-info">
         <h1 class="profile-name">{{ user.username }}</h1>
         <div class="profile-meta">
             <span class="profile-meta-item">📅 Membre depuis {{ user.created_at.strftime('%d/%m/%Y') }}</span>
             <span class="profile-meta-item">📝 {{ user.post_count }} contributions</span>
+            {% if current_user.is_authenticated and current_user.id == user.id %}
+                <a href="{{ url_for('upload_avatar') }}" class="btn btn-primary btn-sm" style="margin-left: 0.5rem;">📷 Modifier l'avatar</a>
+            {% endif %}
         </div>
     </div>
 </div>
