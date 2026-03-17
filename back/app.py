@@ -8,7 +8,7 @@ from forms import RegistrationForm, LoginForm, TopicForm, PostForm
 from datetime import datetime
 from utils import censor_text
 
-app = Flask(__name__)
+app = Flask(__name__, template_folder='../front/templates', static_folder='../front/static')
 app.config.from_object(Config)
 
 # Protection avec Flask-Talisman pour Content Security Policy et HTTP Headers
