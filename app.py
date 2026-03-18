@@ -5,8 +5,8 @@ from flask_login import LoginManager, login_user, logout_user, login_required, c
 from flask_wtf.csrf import CSRFProtect
 from flask_talisman import Talisman
 from config import Config
-from models import db, User, Category, Topic, Post, ChatMessage, UploadedFile
-from forms import RegistrationForm, LoginForm, TopicForm, PostForm, AvatarUploadForm
+from models import db, User, Category, Topic, Post, ChatMessage, UploadedFile, Video
+from forms import RegistrationForm, LoginForm, TopicForm, PostForm, AvatarUploadForm, VideoUploadForm
 from datetime import datetime
 from utils import censor_text
 from werkzeug.utils import secure_filename
@@ -77,13 +77,29 @@ def index():
                            total_users=total_users)
 
 
-@app.route('/category/<int:category_id>')
+@app.route('/category/<int:category_id>', methods=['GET', 'POST'])
 def category(category_id):
     cat = Category.query.get_or_404(category_id)
     page = request.args.get('page', 1, type=int)
     topics = cat.topics.order_by(Topic.created_at.desc()).paginate(
         page=page, per_page=15, error_out=False)
-    return render_template('category.html', category=cat, topics=topics)
+
+    # Si c'est la categorie Clips & Highlights, gerer l'upload video
+    video_form = None
+    videos = None
+    if cat.name == 'Clips & Highlights':
+        video_form = VideoUploadForm()
+        if video_form.validate_on_submit() and current_user.is_authenticated:
+            file = video_form.video.data
+            if file and file.filename != '':
+                upload_result = _handle_video_upload(video_form, file)
+                if upload_result:
+                    return redirect(url_for('category', category_id=category_id))
+        videos = Video.query.order_by(Video.uploaded_at.desc()).paginate(
+            page=request.args.get('vpage', 1, type=int), per_page=12, error_out=False)
+
+    return render_template('category.html', category=cat, topics=topics,
+                           video_form=video_form, videos=videos)
 
 
 @app.route('/topic/<int:topic_id>', methods=['GET', 'POST'])
@@ -376,6 +392,195 @@ def serve_upload(filename):
 
     # Sinon, sert le fichier normalement comme image
     return send_from_directory(upload_folder, filename)
+
+
+# ── Video Upload Security ──
+
+VIDEO_ALLOWED_EXTENSIONS = {'mp4', 'webm', 'mov', 'avi'}
+
+# Magic bytes pour les formats video
+VIDEO_MAGIC_BYTES = {
+    'mp4': {
+        'check': lambda h: h[4:8] == b'ftyp',
+        'mime': 'video/mp4'
+    },
+    'mov': {
+        'check': lambda h: h[4:8] in (b'ftyp', b'moov', b'mdat', b'wide', b'free'),
+        'mime': 'video/quicktime'
+    },
+    'webm': {
+        'check': lambda h: h[:4] == b'\x1a\x45\xdf\xa3',
+        'mime': 'video/webm'
+    },
+    'avi': {
+        'check': lambda h: h[:4] == b'RIFF' and h[8:12] == b'AVI ',
+        'mime': 'video/x-msvideo'
+    },
+}
+
+VALID_VIDEO_MIMES = {'video/mp4', 'video/webm', 'video/quicktime', 'video/x-msvideo'}
+
+
+def is_allowed_video_extension(filename):
+    """Whitelist stricte - une seule extension, pas de double extension."""
+    if '.' not in filename:
+        return False
+    parts = filename.rsplit('.', 1)
+    basename = parts[0]
+    ext = parts[1].lower()
+    # Bloque les doubles extensions (ex: video.php.mp4)
+    if '.' in basename:
+        return False
+    return ext in VIDEO_ALLOWED_EXTENSIONS
+
+
+def detect_video_content_type(file_stream):
+    """Detecte le vrai type MIME via magic bytes, ignore le Content-Type client."""
+    header = file_stream.read(12)
+    file_stream.seek(0)
+    if len(header) < 12:
+        return None
+    for fmt, spec in VIDEO_MAGIC_BYTES.items():
+        if spec['check'](header):
+            return spec['mime']
+    return None
+
+
+def check_video_magic_bytes(file_stream):
+    """Verifie que les magic bytes correspondent a un format video valide."""
+    header = file_stream.read(12)
+    file_stream.seek(0)
+    if len(header) < 12:
+        return False, None
+    for fmt, spec in VIDEO_MAGIC_BYTES.items():
+        if spec['check'](header):
+            return True, fmt
+    return False, None
+
+
+def scan_video_for_code(file_stream):
+    """Scan les premiers et derniers Ko du fichier pour detecter du code injecte.
+    Ne scanne pas tout le binaire pour eviter les faux positifs."""
+    # Scan le debut (header zone, 4 Ko)
+    header = file_stream.read(4096)
+    # Scan la fin (trailer zone, 4 Ko)
+    file_stream.seek(0, 2)
+    size = file_stream.tell()
+    tail_start = max(0, size - 4096)
+    file_stream.seek(tail_start)
+    trailer = file_stream.read()
+    file_stream.seek(0)
+
+    zones = header + trailer
+    dangerous_patterns = [
+        b'<?php', b'<?=', b'<script',
+    ]
+    for pattern in dangerous_patterns:
+        if pattern in zones:
+            return True, pattern.decode('utf-8', errors='replace')
+    return False, None
+
+
+def validate_video_extension_matches_content(filename, detected_mime):
+    """Verifie que l'extension correspond au contenu detecte."""
+    ext = filename.rsplit('.', 1)[1].lower()
+    extension_mime_map = {
+        'mp4': 'video/mp4',
+        'webm': 'video/webm',
+        'mov': 'video/quicktime',
+        'avi': 'video/x-msvideo',
+    }
+    expected_mime = extension_mime_map.get(ext)
+    # MP4 et MOV partagent le magic byte ftyp
+    if ext in ('mp4', 'mov') and detected_mime in ('video/mp4', 'video/quicktime'):
+        return True
+    return expected_mime == detected_mime
+
+
+def _handle_video_upload(form, file):
+    """Gere l'upload video avec toutes les couches de securite. Retourne True si succes."""
+    import uuid
+
+    if not is_allowed_video_extension(file.filename):
+        flash('Extension non autorisee. Seuls .mp4, .webm, .mov et .avi sont acceptes.', 'danger')
+        return False
+
+    file.stream.seek(0, 2)
+    file_size = file.stream.tell()
+    file.stream.seek(0)
+    max_size = app.config.get('VIDEO_MAX_SIZE', 50 * 1024 * 1024)
+    if file_size > max_size:
+        flash(f'Fichier trop volumineux. Maximum {max_size // (1024*1024)} MB.', 'danger')
+        return False
+
+    detected_type = detect_video_content_type(file.stream)
+    if detected_type not in VALID_VIDEO_MIMES:
+        flash('Le contenu du fichier ne correspond pas a une video valide.', 'danger')
+        return False
+
+    valid_magic, detected_format = check_video_magic_bytes(file.stream)
+    if not valid_magic:
+        flash('Les magic bytes ne correspondent pas a un format video valide.', 'danger')
+        return False
+
+    if not validate_video_extension_matches_content(file.filename, detected_type):
+        flash('L\'extension ne correspond pas au contenu reel du fichier.', 'danger')
+        return False
+
+    has_code, found_pattern = scan_video_for_code(file.stream)
+    if has_code:
+        flash('Contenu suspect detecte dans le fichier. Upload refuse.', 'danger')
+        return False
+
+    filename = secure_filename(file.filename)
+    if not filename:
+        flash('Nom de fichier invalide.', 'danger')
+        return False
+
+    ext = filename.rsplit('.', 1)[1].lower()
+    safe_name = f"{uuid.uuid4().hex}.{ext}"
+
+    video_folder = app.config.get('VIDEO_UPLOAD_FOLDER',
+                                   os.path.join(app.root_path, 'static', 'uploads', 'videos'))
+    os.makedirs(video_folder, exist_ok=True)
+    filepath = os.path.join(video_folder, safe_name)
+
+    file.stream.seek(0)
+    file.save(filepath)
+
+    video = Video(
+        title=censor_text(form.title.data),
+        filename=safe_name,
+        original_name=file.filename,
+        content_type=detected_type,
+        file_size=file_size,
+        user_id=current_user.id
+    )
+    db.session.add(video)
+    db.session.commit()
+
+    flash('Clip publie avec succes !', 'success')
+    return True
+
+
+@app.route('/clips/<int:video_id>/delete', methods=['POST'])
+@login_required
+def delete_clip(video_id):
+    video = Video.query.get_or_404(video_id)
+    if video.user_id != current_user.id and not current_user.is_admin:
+        abort(403)
+    video_folder = app.config.get('VIDEO_UPLOAD_FOLDER',
+                                   os.path.join(app.root_path, 'static', 'uploads', 'videos'))
+    filepath = os.path.join(video_folder, video.filename)
+    if os.path.isfile(filepath):
+        os.remove(filepath)
+    db.session.delete(video)
+    db.session.commit()
+    flash('Clip supprime.', 'info')
+    clips_cat = Category.query.filter_by(name='Clips & Highlights').first()
+    if clips_cat:
+        return redirect(url_for('category', category_id=clips_cat.id))
+    return redirect(url_for('index'))
 
 
 # ── Brawlhalla Specific Routes ──

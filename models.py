@@ -115,6 +115,19 @@ class UploadedFile(db.Model):
     uploader = db.relationship('User', backref=db.backref('uploaded_files', lazy='dynamic'))
 
 
+class Video(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(200), nullable=False)
+    filename = db.Column(db.String(255), nullable=False, unique=True)
+    original_name = db.Column(db.String(255), nullable=False)
+    content_type = db.Column(db.String(100), nullable=False)
+    file_size = db.Column(db.Integer, nullable=False)
+    uploaded_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+
+    uploader = db.relationship('User', backref=db.backref('videos', lazy='dynamic'))
+
+
 class ChatMessage(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     content = db.Column(db.String(500), nullable=False)

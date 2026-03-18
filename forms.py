@@ -50,3 +50,10 @@ class PostForm(FlaskForm):
 class AvatarUploadForm(FlaskForm):
     avatar = FileField('Photo de profil')
     submit = SubmitField('Mettre à jour l\'avatar')
+
+
+class VideoUploadForm(FlaskForm):
+    title = StringField('Titre du clip',
+                        validators=[DataRequired(), Length(min=3, max=200)])
+    video = FileField('Fichier video')
+    submit = SubmitField('Publier le clip')

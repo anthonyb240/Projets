@@ -25,6 +25,110 @@
     {% endif %}
 </div>
 
+{% if video_form %}
+<!-- ══════════════════════════════════════════════ -->
+<!-- Upload Video Section (Clips & Highlights)     -->
+<!-- ══════════════════════════════════════════════ -->
+{% if current_user.is_authenticated %}
+<div class="clip-upload-section">
+    <div class="form-card form-card-wide" style="max-width: 100%; margin-bottom: 24px;">
+        <h2 class="form-title" style="font-size: 1.2rem; margin-bottom: 16px;">Publier un clip</h2>
+        <form method="POST" enctype="multipart/form-data">
+            {{ video_form.hidden_tag() }}
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: end;">
+                <div class="form-group" style="margin-bottom: 0;">
+                    {{ video_form.title.label(class="form-label") }}
+                    {{ video_form.title(class="form-control", placeholder="Ex: 0-to-death avec Hattori") }}
+                    {% for error in video_form.title.errors %}
+                        <span class="form-error">{{ error }}</span>
+                    {% endfor %}
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                    {{ video_form.video.label(class="form-label") }}
+                    <input type="file" name="video" id="video" class="form-control"
+                           accept=".mp4,.webm,.mov,.avi"
+                           style="padding: 8px 12px;">
+                    {% for error in video_form.video.errors %}
+                        <span class="form-error">{{ error }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+            <div style="margin-top: 16px; display: flex; align-items: center; justify-content: space-between;">
+                <span style="font-size: 0.8rem; color: var(--text-muted);">
+                    Formats : MP4, WebM, MOV, AVI — Max 50 MB
+                </span>
+                {{ video_form.submit(class="btn btn-primary") }}
+            </div>
+        </form>
+    </div>
+</div>
+{% endif %}
+
+<!-- Video Gallery -->
+{% if videos and videos.items %}
+<div class="section-title" style="margin-bottom: 16px;">Clips recents</div>
+<div class="clips-grid">
+    {% for video in videos.items %}
+    <div class="clip-card">
+        <div class="clip-video">
+            <video controls preload="metadata" width="100%">
+                <source src="{{ url_for('static', filename='uploads/videos/' + video.filename) }}" type="{{ video.content_type }}">
+                Votre navigateur ne supporte pas la lecture video.
+            </video>
+        </div>
+        <div class="clip-info">
+            <h3 class="clip-title">{{ video.title }}</h3>
+            <div class="clip-meta">
+                <a href="{{ url_for('profile', username=video.uploader.username) }}" class="clip-author">
+                    <span class="clip-avatar" style="background: {{ video.uploader.avatar_color }}">{{ video.uploader.initials }}</span>
+                    {{ video.uploader.username }}
+                </a>
+                <span class="clip-date">{{ video.uploaded_at|timeago }}</span>
+                <span class="clip-size">{{ (video.file_size / (1024*1024))|round(1) }} MB</span>
+            </div>
+            {% if current_user.is_authenticated and (current_user.id == video.user_id or current_user.is_admin) %}
+            <form method="POST" action="{{ url_for('delete_clip', video_id=video.id) }}" class="inline-form" style="margin-top: 8px;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-danger btn-xs" onclick="return confirm('Supprimer ce clip ?')">Supprimer</button>
+            </form>
+            {% endif %}
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+{% if videos.pages > 1 %}
+<div class="pagination">
+    {% if videos.has_prev %}
+        <a href="{{ url_for('category', category_id=category.id, vpage=videos.prev_num) }}" class="page-link">Precedent</a>
+    {% endif %}
+    {% for p in videos.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+        {% if p %}
+            <a href="{{ url_for('category', category_id=category.id, vpage=p) }}"
+               class="page-link {{ 'active' if p == videos.page else '' }}">{{ p }}</a>
+        {% else %}
+            <span class="page-ellipsis">...</span>
+        {% endif %}
+    {% endfor %}
+    {% if videos.has_next %}
+        <a href="{{ url_for('category', category_id=category.id, vpage=videos.next_num) }}" class="page-link">Suivant</a>
+    {% endif %}
+</div>
+{% endif %}
+{% elif not topics.items %}
+<div class="empty-state">
+    <span class="empty-icon">🎮</span>
+    <p>Aucun clip pour le moment.</p>
+    <p class="empty-hint">Soyez le premier a partager un moment epique !</p>
+</div>
+{% endif %}
+
+<!-- Topics (discussions) -->
+{% if topics.items %}
+<div class="section-title" style="margin-top: 32px; margin-bottom: 16px;">Discussions</div>
+{% endif %}
+{% endif %}
+
 <!-- Topics list -->
 <div class="topics-list">
     {% if topics.items %}
@@ -48,7 +152,7 @@
             </div>
         </a>
         {% endfor %}
-    {% else %}
+    {% elif not video_form %}
         <div class="empty-state">
             <span class="empty-icon">🍃</span>
             <p>Aucun sujet pour l'instant.</p>
