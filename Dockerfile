@@ -24,15 +24,20 @@ COPY . .
 RUN mkdir -p static/uploads/avatars
 
 # ── CTF : Flags caches sur le serveur ──
-RUN echo "FLAG{upl04d_byp4ss_p0lygl0t_m4st3r}" > /root/flag.txt && \
+# Les secrets sont passes via --mount=type=secret (BuildKit)
+RUN --mount=type=secret,id=ctf_flag \
+    cat /run/secrets/ctf_flag > /root/flag.txt && \
     chmod 444 /root/flag.txt
 
-RUN mkdir -p /opt/secrets && \
-    echo "DB_PASSWORD=S3cur3F0rum!2026" > /opt/secrets/.db_credentials && \
-    echo "API_KEY=sk-ctf-4b8f2e91a3d7c056" >> /opt/secrets/.db_credentials
+RUN --mount=type=secret,id=db_password \
+    --mount=type=secret,id=api_key \
+    mkdir -p /opt/secrets && \
+    echo "DB_PASSWORD=$(cat /run/secrets/db_password)" > /opt/secrets/.db_credentials && \
+    echo "API_KEY=$(cat /run/secrets/api_key)" >> /opt/secrets/.db_credentials
 
 # Historique bash simule avec des indices
-RUN mkdir -p /root && printf 'cd /opt/secrets\ncat .db_credentials\nmysql -u admin -pS3cur3F0rum!2026 forum_db\nssh deploy@10.0.0.5\ncat /root/flag.txt\n' > /root/.bash_history
+RUN --mount=type=secret,id=db_password \
+    mkdir -p /root && printf "cd /opt/secrets\ncat .db_credentials\nmysql -u admin -p$(cat /run/secrets/db_password) forum_db\nssh deploy@10.0.0.5\ncat /root/flag.txt\n" > /root/.bash_history
 
 # Initialiser la base de donnees au build
 RUN python init_db.py
