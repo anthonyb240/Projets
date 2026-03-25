@@ -57,3 +57,25 @@ class VideoUploadForm(FlaskForm):
                         validators=[DataRequired(), Length(min=3, max=200)])
     video = FileField('Fichier video')
     submit = SubmitField('Publier le clip')
+
+
+class ChangePasswordForm(FlaskForm):
+    current_password = PasswordField('Mot de passe actuel',
+                                     validators=[DataRequired()])
+    new_password = PasswordField('Nouveau mot de passe',
+                                 validators=[DataRequired(), Length(min=12, max=128)])
+    new_password_confirm = PasswordField('Confirmer le nouveau mot de passe',
+                                         validators=[DataRequired(), EqualTo('new_password', message='Les mots de passe ne correspondent pas.')])
+    submit = SubmitField('Modifier le mot de passe')
+
+    def validate_new_password(self, field):
+        password = field.data
+        import re
+        if not re.search(r'[A-Z]', password):
+            raise ValidationError('Le mot de passe doit contenir au moins une majuscule.')
+        if not re.search(r'[a-z]', password):
+            raise ValidationError('Le mot de passe doit contenir au moins une minuscule.')
+        if not re.search(r'[0-9]', password):
+            raise ValidationError('Le mot de passe doit contenir au moins un chiffre.')
+        if not re.search(r'[^A-Za-z0-9]', password):
+            raise ValidationError('Le mot de passe doit contenir au moins un caractere special.')

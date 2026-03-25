@@ -28,6 +28,7 @@
             <span class="profile-meta-item">📝 {{ user.post_count }} contributions</span>
             {% if current_user.is_authenticated and current_user.id == user.id %}
                 <a href="{{ url_for('upload_avatar') }}" class="btn btn-primary btn-sm" style="margin-left: 0.5rem;">📷 Modifier l'avatar</a>
+                <a href="{{ url_for('change_password') }}" class="btn btn-secondary btn-sm" style="margin-left: 0.5rem;">🔒 Modifier le mot de passe</a>
             {% endif %}
         </div>
     </div>

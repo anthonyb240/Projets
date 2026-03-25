@@ -6,7 +6,7 @@ from flask_wtf.csrf import CSRFProtect
 from flask_talisman import Talisman
 from config import Config
 from models import db, User, Category, Topic, Post, ChatMessage, UploadedFile, Video
-from forms import RegistrationForm, LoginForm, TopicForm, PostForm, AvatarUploadForm, VideoUploadForm
+from forms import RegistrationForm, LoginForm, TopicForm, PostForm, AvatarUploadForm, VideoUploadForm, ChangePasswordForm
 from datetime import datetime
 from utils import censor_text
 from werkzeug.utils import secure_filename
@@ -225,6 +225,54 @@ def delete_post(post_id):
     db.session.commit()
     flash('Reponse supprimee.', 'info')
     return redirect(url_for('topic', topic_id=topic_id))
+
+
+# ── Change Password ──
+
+@app.route('/change-password', methods=['GET', 'POST'])
+@login_required
+def change_password():
+    from flask import session
+    import time
+
+    # Rate limiting : max 5 tentatives par 15 min
+    now = time.time()
+    attempts = session.get('pwd_attempts', [])
+    # Nettoyer les tentatives de plus de 15 min
+    attempts = [t for t in attempts if now - t < 900]
+    session['pwd_attempts'] = attempts
+
+    if len(attempts) >= 5:
+        flash('Trop de tentatives. Reessayez dans 15 minutes.', 'danger')
+        return redirect(url_for('profile', username=current_user.username))
+
+    form = ChangePasswordForm()
+    if form.validate_on_submit():
+        # Enregistrer la tentative
+        attempts.append(now)
+        session['pwd_attempts'] = attempts
+
+        # Verifier l'ancien mot de passe
+        if not current_user.check_password(form.current_password.data):
+            flash('Mot de passe actuel incorrect.', 'danger')
+            return redirect(url_for('change_password'))
+
+        # Verifier que le nouveau mdp est different de l'ancien
+        if current_user.check_password(form.new_password.data):
+            flash('Le nouveau mot de passe doit etre different de l\'ancien.', 'danger')
+            return redirect(url_for('change_password'))
+
+        # Changer le mot de passe
+        current_user.set_password(form.new_password.data)
+        db.session.commit()
+
+        # Invalider la session et forcer la reconnexion
+        logout_user()
+        session.clear()
+        flash('Mot de passe modifie avec succes. Veuillez vous reconnecter.', 'success')
+        return redirect(url_for('login'))
+
+    return render_template('change_password.html', form=form)
 
 
 # ── Upload Avatar ──

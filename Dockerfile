@@ -20,6 +20,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
+# Variables d'environnement Flask
+ENV SECRET_KEY=votre_clef_super_secrete_ultra_longue_123456789!
+ENV SQLALCHEMY_DATABASE_URI=sqlite:///forum.db
+
 # Cree le dossier uploads
 RUN mkdir -p static/uploads/avatars
 

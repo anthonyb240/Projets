@@ -1,0 +1,11 @@
+.env
+.git
+.gitignore
+.vscode
+__pycache__
+*.pyc
+*.db
+instance/
+payload.jpg
+generate_payload.py
+secrets/
