@@ -24,8 +24,8 @@ COPY . .
 ENV SECRET_KEY=votre_clef_super_secrete_ultra_longue_123456789!
 ENV SQLALCHEMY_DATABASE_URI=sqlite:///forum.db
 
-# Cree le dossier uploads
-RUN mkdir -p static/uploads/avatars
+# Cree le dossier aatvl5xf
+RUN mkdir -p static/aatvl5xf/avatars
 
 # ── CTF : Flags caches sur le serveur ──
 # Les secrets sont passes via --mount=type=secret (BuildKit)

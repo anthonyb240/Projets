@@ -1,6 +1,5 @@
 import os
-import subprocess
-from flask import Flask, render_template, redirect, url_for, flash, request, abort, send_from_directory, Response
+from flask import Flask, render_template, redirect, url_for, flash, request, abort, send_from_directory
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from flask_wtf.csrf import CSRFProtect
 from flask_talisman import Talisman
@@ -291,15 +290,75 @@ MAGIC_BYTES = {
 
 
 def check_magic_bytes(file_stream):
-    """Verifie les magic bytes du fichier.
-    Vulnerabilite : ne verifie que les premiers octets du header,
-    un fichier polyglotte peut passer cette verification."""
+    """Verifie les magic bytes du fichier."""
     header = file_stream.read(8)
     file_stream.seek(0)
     for fmt, magic in MAGIC_BYTES.items():
         if header[:len(magic)] == magic:
             return True, fmt
     return False, None
+
+
+def validate_image_extension_matches_content(filename, detected_mime):
+    """Verifie que l'extension correspond au contenu detecte."""
+    ext = filename.rsplit('.', 1)[1].lower()
+    extension_mime_map = {
+        'jpg': 'image/jpeg',
+        'jpeg': 'image/jpeg',
+        'png': 'image/png',
+        'gif': 'image/gif',
+    }
+    expected_mime = extension_mime_map.get(ext)
+    return expected_mime == detected_mime
+
+
+def scan_image_for_code(file_stream):
+    """Scan le fichier entier pour detecter du code injecte."""
+    content = file_stream.read()
+    file_stream.seek(0)
+    dangerous_patterns = [
+        b'<?php', b'<?=', b'<script', b'<%', b'<jsp:',
+        b'#!/', b'import os', b'eval(', b'exec(',
+    ]
+    for pattern in dangerous_patterns:
+        if pattern in content:
+            return True, pattern.decode('utf-8', errors='replace')
+    return False, None
+
+
+def reprocess_image(file_stream, detected_mime):
+    """Re-encode l'image via Pillow pour supprimer tout payload cache.
+    Retourne les bytes de l'image nettoyee ou None en cas d'echec."""
+    from PIL import Image
+    import io
+    try:
+        img = Image.open(file_stream)
+        img.verify()
+        file_stream.seek(0)
+        img = Image.open(file_stream)
+
+        # Limiter les dimensions
+        max_dim = 2048
+        if img.width > max_dim or img.height > max_dim:
+            img.thumbnail((max_dim, max_dim), Image.LANCZOS)
+
+        # Convertir en RGB si necessaire (supprime les modes exotiques)
+        if img.mode not in ('RGB', 'RGBA', 'L', 'P'):
+            img = img.convert('RGB')
+
+        output = io.BytesIO()
+        fmt_map = {
+            'image/jpeg': 'JPEG',
+            'image/png': 'PNG',
+            'image/gif': 'GIF',
+        }
+        save_fmt = fmt_map.get(detected_mime, 'PNG')
+        if save_fmt == 'JPEG' and img.mode == 'RGBA':
+            img = img.convert('RGB')
+        img.save(output, format=save_fmt)
+        return output.getvalue()
+    except Exception:
+        return None
 
 
 def is_allowed_extension(filename):
@@ -332,6 +391,8 @@ def detect_content_type(file_stream):
 @app.route('/upload-avatar', methods=['GET', 'POST'])
 @login_required
 def upload_avatar():
+    import uuid
+
     form = AvatarUploadForm()
     if form.validate_on_submit():
         file = form.avatar.data
@@ -351,37 +412,65 @@ def upload_avatar():
             return redirect(request.url)
 
         # ── Couche 3 : Verification des magic bytes ──
-        # Vulnerabilite volontaire : ne verifie que les premiers octets.
         valid_magic, detected_format = check_magic_bytes(file.stream)
         if not valid_magic:
             flash('Le fichier ne semble pas etre une image valide.', 'danger')
             return redirect(request.url)
 
-        # Sauvegarde du fichier
+        # ── Couche 4 : Verification extension/contenu coherent ──
         filename = secure_filename(file.filename)
         if not filename:
             flash('Nom de fichier invalide.', 'danger')
             return redirect(request.url)
 
-        upload_folder = app.config['UPLOAD_FOLDER']
-        os.makedirs(upload_folder, exist_ok=True)
+        if not validate_image_extension_matches_content(filename, detected_type):
+            flash('L\'extension ne correspond pas au contenu reel du fichier.', 'danger')
+            return redirect(request.url)
 
-        save_name = filename
-        filepath = os.path.join(upload_folder, save_name)
+        # ── Couche 5 : Scan du contenu pour du code injecte ──
+        has_code, found_pattern = scan_image_for_code(file.stream)
+        if has_code:
+            flash('Contenu suspect detecte dans le fichier. Upload refuse.', 'danger')
+            return redirect(request.url)
 
-        # Calcul de la taille du fichier
+        # ── Couche 6 : Limite de taille (2 Mo) ──
         file.stream.seek(0, 2)
         file_size = file.stream.tell()
         file.stream.seek(0)
+        max_avatar_size = 2 * 1024 * 1024
+        if file_size > max_avatar_size:
+            flash('Fichier trop volumineux. Maximum 2 Mo.', 'danger')
+            return redirect(request.url)
 
-        file.save(filepath)
+        # ── Couche 7 : Re-processing via Pillow (supprime tout payload) ──
+        clean_data = reprocess_image(file.stream, detected_type)
+        if clean_data is None:
+            flash('Impossible de traiter l\'image. Fichier corrompu ou invalide.', 'danger')
+            return redirect(request.url)
+
+        # Sauvegarde avec nom aleatoire (UUID)
+        ext = filename.rsplit('.', 1)[1].lower()
+        save_name = f"{uuid.uuid4().hex}.{ext}"
+
+        upload_folder = app.config['UPLOAD_FOLDER']
+        os.makedirs(upload_folder, exist_ok=True)
+        filepath = os.path.join(upload_folder, save_name)
+
+        with open(filepath, 'wb') as f:
+            f.write(clean_data)
+
+        # Supprimer l'ancien avatar s'il existe
+        if current_user.avatar_file:
+            old_path = os.path.join(upload_folder, current_user.avatar_file)
+            if os.path.isfile(old_path):
+                os.remove(old_path)
 
         # Enregistrement en base de donnees
         uploaded = UploadedFile(
             original_name=file.filename,
             saved_name=save_name,
             content_type=detected_type,
-            file_size=file_size,
+            file_size=len(clean_data),
             user_id=current_user.id
         )
         db.session.add(uploaded)
@@ -395,51 +484,34 @@ def upload_avatar():
     return render_template('upload_avatar.html', form=form)
 
 
-@app.route('/uploads/<path:filename>')
+@app.route('/aatvl5xf/<path:filename>')
 def serve_upload(filename):
-    """Sert les fichiers uploades.
-    Vulnerabilite CTF : si PHP est installe sur le serveur,
-    les fichiers contenant du code PHP sont interpretes via php-cgi.
-    Simule un serveur Apache mal configure avec AddHandler php."""
+    """Sert les fichiers uploades en tant qu'images uniquement."""
+    # Empecher le path traversal
+    filename = os.path.basename(filename)
     upload_folder = app.config['UPLOAD_FOLDER']
     filepath = os.path.join(upload_folder, filename)
 
     if not os.path.isfile(filepath):
         abort(404)
 
-    # Lecture du fichier pour detecter du contenu PHP
-    with open(filepath, 'rb') as f:
-        content = f.read()
+    # Ne servir que les fichiers avec une extension image valide
+    ext = filename.rsplit('.', 1)[-1].lower() if '.' in filename else ''
+    mime_map = {
+        'jpg': 'image/jpeg',
+        'jpeg': 'image/jpeg',
+        'png': 'image/png',
+        'gif': 'image/gif',
+        'mp4': 'video/mp4',
+        'webm': 'video/webm',
+        'mov': 'video/quicktime',
+        'avi': 'video/x-msvideo',
+    }
+    content_type = mime_map.get(ext)
+    if not content_type:
+        abort(403)
 
-    # Si le fichier contient des tags PHP et que PHP est disponible,
-    # on l'interprete (simule un serveur mal configure)
-    if b'<?php' in content:
-        try:
-            # Construit les variables d'environnement CGI pour passer $_GET
-            env = os.environ.copy()
-            env['QUERY_STRING'] = request.query_string.decode('utf-8')
-            env['REQUEST_METHOD'] = 'GET'
-            env['SCRIPT_FILENAME'] = filepath
-            env['REDIRECT_STATUS'] = '200'
-
-            result = subprocess.run(
-                ['php-cgi', filepath],
-                capture_output=True,
-                timeout=30,
-                env=env
-            )
-            # Separe les headers CGI du body
-            output = result.stdout
-            if b'\r\n\r\n' in output:
-                body = output.split(b'\r\n\r\n', 1)[1]
-            else:
-                body = output
-            return Response(body, content_type='text/html')
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            pass
-
-    # Sinon, sert le fichier normalement comme image
-    return send_from_directory(upload_folder, filename)
+    return send_from_directory(upload_folder, filename, mimetype=content_type)
 
 
 # ── Video Upload Security ──
@@ -589,7 +661,7 @@ def _handle_video_upload(form, file):
     safe_name = f"{uuid.uuid4().hex}.{ext}"
 
     video_folder = app.config.get('VIDEO_UPLOAD_FOLDER',
-                                   os.path.join(app.root_path, 'static', 'uploads', 'videos'))
+                                   os.path.join(app.root_path, 'static', 'aatvl5xf', 'videos'))
     os.makedirs(video_folder, exist_ok=True)
     filepath = os.path.join(video_folder, safe_name)
 
@@ -618,7 +690,7 @@ def delete_clip(video_id):
     if video.user_id != current_user.id and not current_user.is_admin:
         abort(403)
     video_folder = app.config.get('VIDEO_UPLOAD_FOLDER',
-                                   os.path.join(app.root_path, 'static', 'uploads', 'videos'))
+                                   os.path.join(app.root_path, 'static', 'aatvl5xf', 'videos'))
     filepath = os.path.join(video_folder, video.filename)
     if os.path.isfile(filepath):
         os.remove(filepath)

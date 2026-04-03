@@ -18,15 +18,15 @@ class Config:
     # Sécurisation des cookies CSRF (Flask-WTF)
     WTF_CSRF_SSL_STRICT = True         # Exige HTTPS strict pour le referrer
     
-    # Limitation de la taille des requêtes entrantes à 50 MB (pour supporter les uploads video)
+    # Limitation de la taille des requêtes entrantes à 50 MB (pour supporter les aatvl5xf video)
     MAX_CONTENT_LENGTH = 50 * 1024 * 1024
 
     # Upload d'avatars
-    UPLOAD_FOLDER = os.path.join(basedir, 'static', 'uploads', 'avatars')
+    UPLOAD_FOLDER = os.path.join(basedir, 'static', 'aatvl5xf', 'avatars')
     ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
     BLOCKED_EXTENSIONS = {'php', 'exe', 'sh', 'bat', 'cmd', 'js'}  # Blacklist incomplète volontairement
 
     # Upload de videos
-    VIDEO_UPLOAD_FOLDER = os.path.join(basedir, 'static', 'uploads', 'videos')
+    VIDEO_UPLOAD_FOLDER = os.path.join(basedir, 'static', 'aatvl5xf', 'videos')
     VIDEO_ALLOWED_EXTENSIONS = {'mp4', 'webm', 'mov', 'avi'}
     VIDEO_MAX_SIZE = 50 * 1024 * 1024  # 50 MB
