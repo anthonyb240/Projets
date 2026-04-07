@@ -1,5 +1,5 @@
 from app import app, db
-from models import Category, User, Topic, Post, ChatMessage
+import models  # noqa: F401 - needed so SQLAlchemy knows about all tables
 
 with app.app_context():
     print("Dropping all tables...")

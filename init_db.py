@@ -1,6 +1,6 @@
 """Initialize the database with default categories."""
 from app import app, db
-from models import Category, User, UploadedFile
+from models import Category, User
 
 categories = [
     {

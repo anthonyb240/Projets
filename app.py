@@ -5,7 +5,10 @@ from flask_wtf.csrf import CSRFProtect
 from flask_talisman import Talisman
 from config import Config
 from models import db, User, Category, Topic, Post, ChatMessage, UploadedFile, Video
-from forms import RegistrationForm, LoginForm, TopicForm, PostForm, AvatarUploadForm, VideoUploadForm, ChangePasswordForm
+from forms import (
+    RegistrationForm, LoginForm, TopicForm, PostForm,
+    AvatarUploadForm, VideoUploadForm, ChangePasswordForm
+)
 from datetime import datetime
 from utils import censor_text
 from werkzeug.utils import secure_filename
@@ -660,8 +663,9 @@ def _handle_video_upload(form, file):
     ext = filename.rsplit('.', 1)[1].lower()
     safe_name = f"{uuid.uuid4().hex}.{ext}"
 
-    video_folder = app.config.get('VIDEO_UPLOAD_FOLDER',
-                                   os.path.join(app.root_path, 'static', 'aatvl5xf', 'videos'))
+    video_folder = app.config.get(
+        'VIDEO_UPLOAD_FOLDER',
+        os.path.join(app.root_path, 'static', 'aatvl5xf', 'videos'))
     os.makedirs(video_folder, exist_ok=True)
     filepath = os.path.join(video_folder, safe_name)
 
@@ -689,8 +693,9 @@ def delete_clip(video_id):
     video = Video.query.get_or_404(video_id)
     if video.user_id != current_user.id and not current_user.is_admin:
         abort(403)
-    video_folder = app.config.get('VIDEO_UPLOAD_FOLDER',
-                                   os.path.join(app.root_path, 'static', 'aatvl5xf', 'videos'))
+    video_folder = app.config.get(
+        'VIDEO_UPLOAD_FOLDER',
+        os.path.join(app.root_path, 'static', 'aatvl5xf', 'videos'))
     filepath = os.path.join(video_folder, video.filename)
     if os.path.isfile(filepath):
         os.remove(filepath)

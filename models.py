@@ -135,4 +135,3 @@ class ChatMessage(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
 
     author = db.relationship('User', backref=db.backref('chat_messages', lazy='dynamic'))
-

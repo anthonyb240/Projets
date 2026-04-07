@@ -1,5 +1,5 @@
 from flask_wtf import FlaskForm
-from flask_wtf.file import FileField, FileAllowed
+from flask_wtf.file import FileField
 from wtforms import StringField, PasswordField, TextAreaField, SubmitField
 from wtforms.validators import DataRequired, Email, EqualTo, Length, ValidationError
 from models import User
@@ -12,8 +12,13 @@ class RegistrationForm(FlaskForm):
                         validators=[DataRequired(), Email()])
     password = PasswordField('Mot de passe',
                              validators=[DataRequired(), Length(min=6)])
-    password_confirm = PasswordField('Confirmer le mot de passe',
-                                     validators=[DataRequired(), EqualTo('password', message='Les mots de passe ne correspondent pas.')])
+    password_confirm = PasswordField(
+        'Confirmer le mot de passe',
+        validators=[
+            DataRequired(),
+            EqualTo('password',
+                    message='Les mots de passe ne correspondent pas.')
+        ])
     submit = SubmitField('S\'inscrire')
 
     def validate_username(self, field):
@@ -64,8 +69,13 @@ class ChangePasswordForm(FlaskForm):
                                      validators=[DataRequired()])
     new_password = PasswordField('Nouveau mot de passe',
                                  validators=[DataRequired(), Length(min=12, max=128)])
-    new_password_confirm = PasswordField('Confirmer le nouveau mot de passe',
-                                         validators=[DataRequired(), EqualTo('new_password', message='Les mots de passe ne correspondent pas.')])
+    new_password_confirm = PasswordField(
+        'Confirmer le nouveau mot de passe',
+        validators=[
+            DataRequired(),
+            EqualTo('new_password',
+                    message='Les mots de passe ne correspondent pas.')
+        ])
     submit = SubmitField('Modifier le mot de passe')
 
     def validate_new_password(self, field):
