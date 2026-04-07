@@ -1,0 +1,86 @@
+name: my_pipeline
+
+on:
+  push:
+    branches: [dev]
+  pull_request:
+    branches: [dev]
+
+jobs:
+  # Job 1 : Détection de secrets avec Gitleaks
+  gitleaks:
+    name: Gitleaks - Détection de secrets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Gitleaks running
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Job 2 : Linting Python avec flake8
+  lint:
+    name: Lint - Analyse de code
+    runs-on: ubuntu-latest
+    needs: gitleaks
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Installation de flake8
+        run: pip install flake8
+
+      - name: Lancement du linting
+        run: flake8 . --max-line-length=120 --statistics
+
+  # Job 3 : SAST avec Bandit
+  sast:
+    name: SAST - Bandit
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Installation de Bandit
+        run: pip install bandit
+
+      - name: Lancement Bandit
+        run: bandit -r . -f json -o bandit-report.json || true
+
+      # Artefact créé pour conserver le rapport JSON après l'arrêt du runner
+      - name: Sauvegarde du rapport
+        uses: actions/upload-artifact@v4
+        with:
+          name: bandit-report
+          path: bandit-report.json
+
+  # Job 4 : SCA avec pip-audit
+  sca:
+    name: SCA - Audit des dépendances
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Installation de pip-audit
+        run: pip install pip-audit
+
+      - name: Scan du requirements (dépendances)
+        run: pip-audit -r requirements.txt
