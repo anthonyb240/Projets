@@ -31,7 +31,7 @@ jobs:
           fetch-depth: 0
 
       - name: TruffleHog running
-        uses: trufflesecurity/trufflehog@v3
+        uses: trufflesecurity/trufflehog@v3.63.2
         with:
           extra_args: --only-verified
 
