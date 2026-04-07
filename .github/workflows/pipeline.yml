@@ -108,3 +108,47 @@ jobs:
         with:
           name: trivy-report
           path: trivy-report.txt
+
+  # Job 6 : DAST avec Nikto
+  dast:
+    name: DAST - Nikto
+    runs-on: ubuntu-latest
+    needs: trivy
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Installation des dépendances
+        run: pip install -r requirements.txt
+
+      - name: Démarrage de l'application
+        run: |
+          python app.py &
+          echo "Attente du démarrage du serveur..."
+          for i in $(seq 1 30); do
+            if curl -s http://localhost:5000 > /dev/null 2>&1; then
+              echo "Serveur prêt !"
+              break
+            fi
+            echo "Tentative $i/30..."
+            sleep 2
+          done
+
+      - name: Scan DAST avec Nikto
+        run: |
+          docker run --rm --network host \
+            secfigo/nikto:latest \
+            -h http://localhost:5000 \
+            -Format htm -output /tmp/nikto-report.html \
+            -Tuning 1 2 3 4 5 6 7 8 9 0 || true
+          docker cp $(docker ps -lq):/tmp/nikto-report.html nikto-report.html || true
+
+      - name: Sauvegarde du rapport Nikto
+        uses: actions/upload-artifact@v4
+        with:
+          name: nikto-report
+          path: nikto-report.html
