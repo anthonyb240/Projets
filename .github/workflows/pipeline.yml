@@ -20,8 +20,7 @@ jobs:
         uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITLEAKS_CONFIG: .github/gitleaks.toml
-
+		  GITLEAKS_CONFIG: .gitleaks.toml
   # Job 1b : Détection de secrets avec TruffleHog
   trufflehog:
     name: TruffleHog - Détection de secrets
@@ -167,3 +166,18 @@ jobs:
         with:
           name: nikto-report
           path: nikto-report.html
+
+  # Job 7 : SAST avec Semgrep
+  semgrep:
+    name: SAST - Semgrep
+    runs-on: ubuntu-latest
+    needs: [lint]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Lancement de Semgrep CI
+        uses: returntocorp/semgrep-action@v1
+        with:
+          config: p/default
+        env:
+          SEMGREP_RULES: p/default
