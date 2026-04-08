@@ -1,0 +1,7 @@
+title = "Custom Gitleaks Config"
+
+[[rules]]
+id = "vc-short-token"
+description = "Detect vc short tokens in code"
+regex = '''(?i)(mdp|password|token|key)\s*[:=]\s*["']?(vc_[A-Za-z0-9]{8,20})["']?'''
+tags = ["custom", "secret", "vc"]
