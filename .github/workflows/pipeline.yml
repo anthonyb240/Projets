@@ -20,7 +20,7 @@ jobs:
         uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-		  GITHUB_CONFIG: .github/gitleaks.toml
+		  GITLEAKS_CONFIG: .github/gitleaks.toml
 
   # Job 1b : Détection de secrets avec TruffleHog
   trufflehog:
