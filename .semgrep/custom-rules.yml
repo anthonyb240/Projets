@@ -1,0 +1,44 @@
+rules:
+  - id: no-debug-true
+    patterns:
+      - pattern: debug=True
+    message: "Interdit : debug=True ne doit pas etre utilise en production"
+    languages: [python]
+    severity: ERROR
+
+  - id: no-md5-usage
+    patterns:
+      - pattern: hashlib.md5(...)
+    message: "Interdit : MD5 est obsolete et non securise, utilisez SHA-256 ou mieux"
+    languages: [python]
+    severity: ERROR
+
+  - id: no-hardcoded-secret-key
+    patterns:
+      - pattern: SECRET_KEY = "..."
+    message: "Interdit : SECRET_KEY ne doit pas etre en dur dans le code"
+    languages: [python]
+    severity: ERROR
+
+  - id: no-shell-true-subprocess
+    patterns:
+      - pattern: subprocess.call(..., shell=True, ...)
+      - pattern: subprocess.run(..., shell=True, ...)
+      - pattern: subprocess.Popen(..., shell=True, ...)
+    message: "Mauvaise pratique : shell=True dans subprocess est dangereux (injection de commandes)"
+    languages: [python]
+    severity: WARNING
+
+  - id: no-eval
+    patterns:
+      - pattern: eval(...)
+    message: "Mauvaise pratique : eval() permet l'execution de code arbitraire"
+    languages: [python]
+    severity: ERROR
+
+  - id: no-exec
+    patterns:
+      - pattern: exec(...)
+    message: "Mauvaise pratique : exec() permet l'execution de code arbitraire"
+    languages: [python]
+    severity: ERROR
