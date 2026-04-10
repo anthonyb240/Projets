@@ -1,0 +1,31 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      secrets:
+        - ctf_flag
+        - db_password
+        - api_key
+    image: app-securisee:latest
+    container_name: forum-app
+    ports:
+      - "5000:5000"
+    environment:
+      SECRET_KEY: ${SECRET_KEY:-ci-test-secret-key}
+      SQLALCHEMY_DATABASE_URI: sqlite:///forum.db
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+secrets:
+  ctf_flag:
+    environment: CTF_FLAG
+  db_password:
+    environment: DB_PASSWORD
+  api_key:
+    environment: API_KEY

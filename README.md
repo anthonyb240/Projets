@@ -25,7 +25,7 @@ gitleaks  trufflehog   lint (Flake8)
                          |
                   docker-build-scan (build + Trivy image)
                          |
-                    dast-nikto (scan runtime)
+                  dast-wapiti (docker-compose + Wapiti)
                          |
                   docker-push (deploy DockerHub)
                     [main only]
@@ -72,7 +72,8 @@ gitleaks  trufflehog   lint (Flake8)
 
 | Outil | Role | Status |
 |-------|------|--------|
-| **Nikto** | Scan DAST de l'application en cours d'execution | Obligatoire |
+| **Wapiti** | Scan DAST de l'application en cours d'execution (remplace Nikto) | Bonus |
+| **docker-compose** | Demarrage de l'application via `docker compose up` dans la pipeline | Bonus |
 | **DockerHub Push** | Deploy de l'image sur DockerHub (branche `main` uniquement) | Obligatoire |
 | **Artefacts** | Tous les rapports sont exportes en artefacts GitHub | Bonus |
 
@@ -96,7 +97,7 @@ Chaque execution de la pipeline produit les rapports suivants, telechargeables d
 | `semgrep-reports` | JSON | Resultats Semgrep (regles par defaut + custom) |
 | `trivy-fs-report` | TXT | Scan Trivy du filesystem (pre-build) |
 | `trivy-image-report` | TXT | Scan Trivy de l'image Docker (post-build) |
-| `nikto-report` | CSV | Resultats du scan DAST Nikto |
+| `wapiti-report` | HTML | Resultats du scan DAST Wapiti |
 
 ## Configuration requise
 
