@@ -297,7 +297,7 @@ jobs:
             -f html \
             -o /reports/wapiti-report.html \
             --flush-session \
-            --scope folder || true
+            --scope folder
 
       - name: Arret des conteneurs
         if: always()
