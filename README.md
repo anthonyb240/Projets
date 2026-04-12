@@ -203,31 +203,30 @@ Chaque execution produit les rapports suivants, telechargeables depuis l'onglet 
 Au cours de la construction de la pipeline, plusieurs blocages majeurs ont ete rencontres :
 
 #### Erreur 1 : Semgrep cassait la pipeline
-Semgrep avait ete ajoute mais plantait systematiquement, ce qui a conduit a le commenter entierement. Resultat : la pipeline etait "verte" mais Semgrep n'etait plus execute du tout, perdant l'interet du SAST complementaire.
+Semgrep avait ete ajoute mais plantait systematiquement, ce qui a conduit a le commenter entierement. Resultat : la pipeline etait "verte" mais Semgrep n'etait plus execute du tout, perdant l'interet du SAST complementaire. [👉 Voir le correctif](#correctif-1--semgrep-re-active-et-isole)
 
 #### Erreur 2 : Rapport Nikto vide / artefact manquant
-Le scan Nikto original utilisait `docker cp $(docker ps -lq):/tmp/nikto-report.html` pour recuperer le rapport. Mais le conteneur etait deja arrete au moment de la commande, donc **l'artefact etait systematiquement vide**.
+Le scan Nikto original utilisait `docker cp $(docker ps -lq):/tmp/nikto-report.html` pour recuperer le rapport. Mais le conteneur etait deja arrete au moment de la commande, donc **l'artefact etait systematiquement vide**. [👉 Voir le correctif](#correctif-2--wapiti-via-docker-compose)
 
 #### Erreur 3 : Trivy bloquait toute la pipeline
-Avec `exit-code: '1'` et `severity: HIGH,CRITICAL`, Trivy faisait echouer l'ensemble de la pipeline au premier CVE trouve dans une dependance transitive, empechant d'atteindre le job DAST et le deploy.
+Avec `exit-code: '1'` et `severity: HIGH,CRITICAL`, Trivy faisait echouer l'ensemble de la pipeline au premier CVE trouve dans une dependance transitive, empechant d'atteindre le job DAST et le deploy. [👉 Voir le correctif](#correctif-3--trivy-non-bloquant)
 
 #### Erreur 4 : Jobs executes inutilement
-Tous les jobs tournaient sur chaque push (meme les modifications de README). Aucune dependance conditionnelle, **gaspillage de minutes CI/CD**.
+Tous les jobs tournaient sur chaque push (meme les modifications de README). Aucune dependance conditionnelle, **gaspillage de minutes CI/CD**. [👉 Voir le correctif](#correctif-4--cicd-intelligente-lab-5)
 
 #### Erreur 5 : Docker build echoue a cause des BuildKit secrets
-Le `Dockerfile` utilise `--mount=type=secret,id=ctf_flag` et plusieurs autres secrets. Sans passer ces secrets au `docker build` dans le CI, le build echouait immediatement avec une erreur cryptique.
+Le `Dockerfile` utilise `--mount=type=secret,id=ctf_flag` et plusieurs autres secrets. Sans passer ces secrets au `docker build` dans le CI, le build echouait immediatement avec une erreur cryptique. [👉 Voir le correctif](#correctif-5--gestion-des-buildkit-secrets-en-ci)
 
 #### Erreur 6 : Gitleaks detectait de faux positifs
-Le fichier `gitleaks.toml` contenait une regle custom qui matchait trop de choses, bloquant la pipeline sur des chaines legitimes (noms de variables, exemples dans les commentaires).
+Le fichier `gitleaks.toml` contenait une regle custom qui matchait trop de choses, bloquant la pipeline sur des chaines legitimes (noms de variables, exemples dans les commentaires). [👉 Voir le correctif](#correctif-6--regle-gitleaks-affinee)
 
 #### Erreur 7 : DockerHub push tentait de tourner sur `dev`
-Le job `docker-push` essayait de se connecter a DockerHub sur chaque push de branche `dev`, alors que les secrets DockerHub ne sont supposes etre utilises qu'en production (`main`).
+Le job `docker-push` essayait de se connecter a DockerHub sur chaque push de branche `dev`, alors que les secrets DockerHub ne sont supposes etre utilises qu'en production (`main`). [👉 Voir le correctif](#correctif-7--docker-push-conditionne-a-main)
 
 ### 3.3 Correctifs apportes
 
 #### Correctif 1 : Semgrep re-active et isole
 - Passage de l'action `returntocorp/semgrep-action` a une installation pip directe
-- Ajout de `|| true` pour que le job ne bloque pas la pipeline mais uploade quand meme le rapport
 - Separation des regles `auto` et `.semgrep/custom-rules.yml` en deux scans distincts
 - Les rapports sont uploadees en artefact (`semgrep-reports`)
 
