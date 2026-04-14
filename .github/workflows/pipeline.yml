@@ -331,8 +331,8 @@ jobs:
             --secret id=db_password,src=<(echo "${{ secrets.DB_PASSWORD }}") \
             --secret id=api_key,src=<(echo "${{ secrets.API_KEY }}") \
             -t ghcr.io/${var_repo}:latest . \
-            -t ghcr.io/${var_repo}:${{ github.sha }} . \
-            -t ghcr.io/${var_repo}:dev .
+            -t ghcr.io/${var_repo}:${{ github.sha }} \
+            -t ghcr.io/${var_repo}:dev
           docker push ghcr.io/${var_repo}:latest
           docker push ghcr.io/${var_repo}:${{ github.sha }}
           docker push ghcr.io/${var_repo}:dev
