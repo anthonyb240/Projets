@@ -350,12 +350,12 @@ jobs:
 
       - name: Build et Push
         run: |
-          var_repo=${{ github.repository }} | tr '[:lower:]' '[:upper:]'
+          var_repo=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
           docker build \
             --secret id=ctf_flag,src=<(echo "${{ secrets.CTF_FLAG }}") \
             --secret id=db_password,src=<(echo "${{ secrets.DB_PASSWORD }}") \
             --secret id=api_key,src=<(echo "${{ secrets.API_KEY }}") \
-            -t ghcr.io/${{ $var_repo }}:latest \
-            -t ghcr.io/${{ $var_repo }}:${{ github.sha }} .
-          docker push ghcr.io/${{ $var_repo }}:latest
-          docker push ghcr.io/${{ $var_repo }}:${{ github.sha }}
+            -t ghcr.io/${var_repo}:latest \
+            -t ghcr.io/${var_repo}:${{ github.sha }} .
+          docker push ghcr.io/${var_repo}:latest
+          docker push ghcr.io/${var_repo}:${{ github.sha }}
