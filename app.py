@@ -1,5 +1,9 @@
 import os
-from flask import Flask, render_template, redirect, url_for, flash, request, abort, send_from_directory
+import logging
+import random
+import platform
+import socket
+from flask import Flask, render_template, redirect, url_for, flash, request, abort, send_from_directory, jsonify
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from flask_wtf.csrf import CSRFProtect
 from flask_talisman import Talisman
@@ -12,6 +16,17 @@ from forms import (
 from datetime import datetime
 from utils import censor_text
 from werkzeug.utils import secure_filename
+
+# ── Logging configuration ──
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    handlers=[
+        logging.FileHandler('app.log'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 app.config.from_object(Config)
@@ -754,6 +769,59 @@ def api_chat_messages():
             'time': m.created_at.strftime('%H:%M')
         } for m in messages]
     }
+
+
+# ── Feature 1 : /health ──
+
+@app.route('/health')
+def health():
+    logger.info('Health check called')
+    return jsonify({"status": "ok"}), 200
+
+
+# ── Feature 2 : /info ──
+
+@app.route('/info')
+def info():
+    logger.info('Info endpoint called')
+    return jsonify({
+        "app": "mon-api",
+        "version": "1.0",
+        "mode": os.getenv("FLASK_MODE", "dev"),
+        "port": int(os.getenv("PORT", 5000)),
+        "python_version": platform.python_version(),
+        "hostname": socket.gethostname()
+    }), 200
+
+
+# ── Feature 3 : /random-fail ──
+
+@app.route('/random-fail')
+def random_fail():
+    try:
+        if random.randint(1, 3) == 1:
+            raise Exception("Erreur simulee en production")
+        logger.info('random-fail: succes')
+        return jsonify({"status": "success", "message": "Tout va bien !"}), 200
+    except Exception as e:
+        logger.error(f'random-fail: {e}')
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+# ── Feature 4 : /logs-demo ──
+
+@app.route('/logs-demo')
+def logs_demo():
+    logger.info('logs-demo: Ceci est un log INFO - tout fonctionne normalement')
+    logger.warning('logs-demo: Ceci est un log WARNING - attention, seuil proche')
+    logger.error('logs-demo: Ceci est un log ERROR - une erreur est survenue')
+    return jsonify({
+        "logs_generated": [
+            {"level": "INFO", "code": 200, "message": "Fonctionnement normal"},
+            {"level": "WARNING", "code": 400, "message": "Requete suspecte ou seuil proche"},
+            {"level": "ERROR", "code": 500, "message": "Erreur interne du serveur"}
+        ]
+    }), 200
 
 
 if __name__ == '__main__':
