@@ -257,7 +257,7 @@ jobs:
           path: trivy-image-report.txt
 
   # ============================================================
-  # Lab 4 : DAST & Deploy
+  # Lab 4 : DAST & Deploys
   # ============================================================
 
   # Job 4a : DAST avec Wapiti via docker-compose
