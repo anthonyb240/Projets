@@ -334,3 +334,27 @@ jobs:
             -t ${{ secrets.DOCKERHUB_USERNAME }}/app-securisee:${{ github.sha }} .
           docker push ${{ secrets.DOCKERHUB_USERNAME }}/app-securisee:latest
           docker push ${{ secrets.DOCKERHUB_USERNAME }}/app-securisee:${{ github.sha }}
+  
+  push_ghcr:
+    name: Deploy - Push GHCR
+    runs-on: ubuntu-latest
+    steps: 
+      - uses: actions/checkout@v4
+
+      - name: Login GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build et Push
+        run: |
+          docker build \
+            --secret id=ctf_flag,src=<(echo "${{ secrets.CTF_FLAG }}") \
+            --secret id=db_password,src=<(echo "${{ secrets.DB_PASSWORD }}") \
+            --secret id=api_key,src=<(echo "${{ secrets.API_KEY }}") \
+            -t ghcr.io/${{ github.repository }}:latest \
+            -t ghcr.io/${{ github.repository }}:${{ github.sha }} .
+          docker push ghcr.io/${{ github.repository }}:latest
+          docker push ghcr.io/${{ github.repository }}:${{ github.sha }}      
