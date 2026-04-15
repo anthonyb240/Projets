@@ -337,18 +337,17 @@ jobs:
           docker push ghcr.io/${var_repo}:${{ github.sha }}
           docker push ghcr.io/${var_repo}:dev
 
-    render-deploy:
-      name: Deploy to Render
-      runs-on: ubuntu-latest
-      permissions:
-        contents: read
-        packages: write
-      needs: docker-push
-      steps:
-        - name: Trigger deploy
-          run: |
-            render_service=${{ secrets.RENDER_SERVICE_ID }}
-            render_api_key=${{ secrets.RENDER_API_KEY }}
-            curl -X POST "https://api.render.com/v1/services/${render_service}/deploys" \
-              -H "Authorization: Bearer $render_api_key" \
-              -H "Content-Type: application/json"
+  render-deploy:
+    name: Deploy to Render
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Trigger deploy
+        run: |
+          render_service=${{ secrets.RENDER_SERVICE_ID }}
+          render_api_key=${{ secrets.RENDER_API_KEY }}
+          curl -X POST "https://api.render.com/v1/services/${render_service}/deploys" \
+            -H "Authorization: Bearer $render_api_key" \
+            -H "Content-Type: application/json"
