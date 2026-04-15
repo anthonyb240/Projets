@@ -399,8 +399,7 @@ jobs:
             echo "rollback=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Health check endpoint
-        if: steps.check.outputs.rollback == 'false'
+      - name: Health check
         id: health
         run: |
           status_code=$(curl -s -o /dev/null -w "%{http_code}" \
@@ -409,12 +408,12 @@ jobs:
 
           echo "Health check HTTP status: $status_code"
 
-          if [ "$status_code" -ne 200 ]; then
-            echo "Health check failed (HTTP $status_code)"
-            echo "rollback=true" >> $GITHUB_OUTPUT
+          if [ "$status_code" -eq 200 ]; then
+            echo "App is healthy"
+            echo "healthy=true" >> $GITHUB_OUTPUT
           else
-            echo "Health check passed"
-            echo "rollback=false" >> $GITHUB_OUTPUT
+            echo "App is unhealthy (HTTP $status_code)"
+            echo "healthy=false" >> $GITHUB_OUTPUT
           fi
 
       - name: Rollback via image SHA

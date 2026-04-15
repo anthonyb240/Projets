@@ -777,24 +777,35 @@ def api_chat_messages():
         } for m in messages]
     }
 
-
-# ── Feature 1 : /health ──
+# ── Feature 2 : /health ──
 
 @app.route('/health')
 def health():
     logger.info('Health check called')
-
     uptime = round(time.time() - START_TIME, 2)
+    errors = []
+
+    # Check DB
+    try:
+        db.session.execute(db.text('SELECT 1'))
+    except Exception as e:
+        errors.append(f"database: {str(e)}")
+
+    # Check fichiers critiques / config
+    if not os.getenv("SECRET_KEY"):
+        errors.append("missing SECRET_KEY")
+
+    status_code = 200 if not errors else 400
 
     return jsonify({
-        "status": "ok",
+        "status": "ok" if not errors else "unhealthy",
+        "errors": errors,
         "service": "forum-api",
         "timestamp": int(time.time()),
         "uptime_seconds": uptime,
         "version": "1.0.0",
         "environment": os.getenv("FLASK_MODE", "dev")
-    }), 200
-
+    }), status_code
 
 # ── Feature 2 : /info ──
 
