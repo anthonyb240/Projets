@@ -49,7 +49,7 @@ jobs:
       - name: Gitleaks scan
         uses: gitleaks/gitleaks-action@v2
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.TOKEN }}
           GITLEAKS_CONFIG: gitleaks.toml
 
   # Job 1b : Detection de secrets avec TruffleHog (alternative)
@@ -321,7 +321,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Login to GHCR
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+        run: echo "${{ secrets.TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
       - name: Build et Push
         run: |
@@ -350,9 +350,7 @@ jobs:
 
       - name: Trigger deploy
         run: |
-          RENDER_API_KEY=$(cat secrets/render_api_key.txt)
-          RENDER_SERVICE_ID=$(cat secrets/render_service_id.txt)
           curl -s -w "\nHTTP Status: %{http_code}\n" \
-            -X POST "https://api.render.com/v1/services/${RENDER_SERVICE_ID}/deploys" \
-            -H "Authorization: Bearer ${RENDER_API_KEY}" \
+            -X POST "https://api.render.com/v1/services/${secrets.RENDER_SERVICE}/deploys" \
+            -H "Authorization: Bearer ${secrets.RENDER_KEY}" \
             -H "Content-Type: application/json"
