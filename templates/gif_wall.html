@@ -1,0 +1,378 @@
+{% extends "base.html" %}
+{% block title %}GIF Wall{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+    <a href="{{ url_for('index') }}">Accueil</a>
+    <span class="breadcrumb-sep">/</span>
+    <span class="breadcrumb-current">GIF Wall</span>
+</div>
+
+<div class="page-header">
+    <div class="page-header-content">
+        <span class="page-header-icon" id="header-icon">🖼️</span>
+        <div>
+            <h1 class="page-header-title" id="page-title">GIF Wall</h1>
+            <p class="page-header-desc">Les meilleurs GIFs de la communaute Brawlhalla</p>
+        </div>
+    </div>
+</div>
+
+<style>
+    /* ══ BUG: grid columns don't add up, gap is absurdly large on some ══ */
+    .gif-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 18px;
+        margin-top: 24px;
+    }
+
+    .gif-card {
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        overflow: hidden; /* BUG: will be toggled off by JS */
+        transition: transform 0.3s, box-shadow 0.3s;
+        position: relative;
+    }
+
+    /* BUG: hover grows card but never shrinks back properly */
+    .gif-card:hover {
+        transform: scale(1.15);
+        z-index: 999;
+        box-shadow: var(--shadow-lg);
+    }
+
+    .gif-card img {
+        width: 100%;
+        height: 200px;
+        object-fit: cover;
+        display: block;
+    }
+
+    .gif-card-info {
+        padding: 12px 14px;
+    }
+
+    .gif-card-title {
+        font-size: 0.95rem;
+        font-weight: 600;
+        color: var(--text-primary);
+        margin-bottom: 4px;
+    }
+
+    .gif-card-author {
+        font-size: 0.8rem;
+        color: var(--text-muted);
+    }
+
+    .gif-card-votes {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 8px;
+    }
+
+    .gif-card-votes button {
+        background: var(--bg-input);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        color: var(--text-secondary);
+        padding: 4px 10px;
+        cursor: pointer;
+        font-size: 0.85rem;
+        transition: background 0.2s;
+    }
+
+    .gif-card-votes button:hover {
+        background: var(--accent);
+        color: #fff;
+    }
+
+    .vote-count {
+        font-weight: 700;
+        color: var(--accent);
+        font-size: 1rem;
+        min-width: 30px;
+        text-align: center;
+    }
+
+    /* BUG: this animation runs forever and rotates the title */
+    @keyframes title-glitch {
+        0% { transform: translate(0, 0) skewX(0deg); }
+        20% { transform: translate(-3px, 2px) skewX(2deg); }
+        40% { transform: translate(3px, -1px) skewX(-1deg); color: #ff0040; }
+        60% { transform: translate(-2px, 1px) skewX(1deg); }
+        80% { transform: translate(2px, -2px) skewX(-2deg); color: #00ff88; }
+        100% { transform: translate(0, 0) skewX(0deg); }
+    }
+
+    /* BUG: cards randomly spin */
+    @keyframes card-spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+    }
+
+    /* BUG: card drifts off screen */
+    @keyframes drift-right {
+        0% { transform: translateX(0); }
+        100% { transform: translateX(120vw); }
+    }
+
+    /* BUG: upside-down text */
+    .flipped-text {
+        transform: rotate(180deg);
+        display: inline-block;
+    }
+
+    /* BUG: infinite grow pulse */
+    @keyframes cursed-pulse {
+        0% { transform: scale(1); }
+        50% { transform: scale(1.4); }
+        100% { transform: scale(1); }
+    }
+
+    .gif-counter {
+        text-align: center;
+        margin: 20px 0;
+        font-size: 1.1rem;
+        color: var(--text-secondary);
+    }
+
+    .gif-counter span {
+        color: var(--accent);
+        font-weight: 700;
+    }
+
+    /* BUG: load-more button teleports on hover */
+    .load-more-btn {
+        display: block;
+        margin: 30px auto;
+        padding: 12px 32px;
+        background: var(--accent-gradient);
+        color: #fff;
+        border: none;
+        border-radius: var(--radius);
+        font-size: 1rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: transform 0.1s;
+        position: relative;
+    }
+
+    .load-more-btn:hover {
+        transform: translateY(-200px) rotate(15deg);
+    }
+
+    /* BUG: overlapping badge */
+    .buggy-badge {
+        position: absolute;
+        top: -12px;
+        right: -12px;
+        background: var(--danger);
+        color: #fff;
+        font-size: 0.7rem;
+        font-weight: 700;
+        padding: 3px 8px;
+        border-radius: 20px;
+        z-index: 10;
+        animation: cursed-pulse 0.8s infinite;
+    }
+</style>
+
+<div class="gif-counter">
+    <span id="gif-count">0</span> GIFs charges — <span class="flipped-text">tout va bien</span>
+</div>
+
+<div class="gif-grid" id="gifGrid">
+
+    <div class="gif-card" id="card-0">
+        <span class="buggy-badge">HOT</span>
+        <img src="https://media.giphy.com/media/l0HlBO7eyXzSZkJri/giphy.gif" alt="Brawlhalla">
+        <div class="gif-card-info">
+            <div class="gif-card-title">Orion goes brrrrr</div>
+            <div class="gif-card-author">par xX_SlayerBH_Xx</div>
+            <div class="gif-card-votes">
+                <button onclick="vote(0, 1)">👍</button>
+                <span class="vote-count" id="votes-0">42</span>
+                <button onclick="vote(0, -1)">👎</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="gif-card" id="card-1">
+        <img src="https://media.giphy.com/media/3o7btPCcdNniyf0ArS/giphy.gif" alt="combo">
+        <div class="gif-card-info">
+            <div class="gif-card-title">Combo 0-to-death insane</div>
+            <div class="gif-card-author">par BaguetteFighter</div>
+            <div class="gif-card-votes">
+                <button onclick="vote(1, 1)">👍</button>
+                <span class="vote-count" id="votes-1">27</span>
+                <button onclick="vote(1, -1)">👎</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="gif-card" id="card-2">
+        <span class="buggy-badge">NEW</span>
+        <img src="https://media.giphy.com/media/xT9IgzoKnwFNmISR8I/giphy.gif" alt="rage quit">
+        <div class="gif-card-info">
+            <div class="gif-card-title">Rage quit en ranked</div>
+            <div class="gif-card-author">par SaltKing2000</div>
+            <div class="gif-card-votes">
+                <button onclick="vote(2, 1)">👍</button>
+                <span class="vote-count" id="votes-2">99</span>
+                <button onclick="vote(2, -1)">👎</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="gif-card" id="card-3">
+        <img src="https://media.giphy.com/media/26ufdipQqU2lhNA4g/giphy.gif" alt="victory">
+        <div class="gif-card-info">
+            <div class="gif-card-title">VICTOIRE EPIQUE</div>
+            <div class="gif-card-author">par <span class="flipped-text">ProGamer</span></div>
+            <div class="gif-card-votes">
+                <button onclick="vote(3, 1)">👍</button>
+                <span class="vote-count" id="votes-3">13</span>
+                <button onclick="vote(3, -1)">👎</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="gif-card" id="card-4">
+        <img src="https://media.giphy.com/media/3oEjHGr1Fhz0kyv8Ig/giphy.gif" alt="ko">
+        <div class="gif-card-info">
+            <div class="gif-card-title">KO avec style</div>
+            <div class="gif-card-author">par HammerMain69</div>
+            <div class="gif-card-votes">
+                <button onclick="vote(4, 1)">👍</button>
+                <span class="vote-count" id="votes-4">55</span>
+                <button onclick="vote(4, -1)">👎</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="gif-card" id="card-5">
+        <span class="buggy-badge">LOL</span>
+        <img src="https://media.giphy.com/media/l41YtZOb9EUABnuqA/giphy.gif" alt="fail">
+        <div class="gif-card-info">
+            <div class="gif-card-title">Le fail du siecle</div>
+            <div class="gif-card-author">par NoobMaster420</div>
+            <div class="gif-card-votes">
+                <button onclick="vote(5, 1)">👍</button>
+                <span class="vote-count" id="votes-5">71</span>
+                <button onclick="vote(5, -1)">👎</button>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<button class="load-more-btn" id="loadMoreBtn">Charger plus de GIFs</button>
+
+<script>
+    // ══ BUG ZONE ══
+
+    // BUG 1: Title glitches after 2 seconds
+    setTimeout(function() {
+        document.getElementById('page-title').style.animation = 'title-glitch 0.3s infinite';
+    }, 2000);
+
+    // BUG 2: Vote system is broken — votes go in wrong direction sometimes
+    var votes = {0: 42, 1: 27, 2: 99, 3: 13, 4: 55, 5: 71};
+    function vote(cardId, direction) {
+        // BUG: random chance to invert the vote
+        if (Math.random() > 0.5) {
+            direction = -direction;
+        }
+        // BUG: sometimes adds way too much
+        var amount = Math.random() > 0.7 ? direction * Math.floor(Math.random() * 50) : direction;
+        votes[cardId] += amount;
+        document.getElementById('votes-' + cardId).textContent = votes[cardId];
+
+        // BUG: card spins when you vote
+        if (Math.random() > 0.6) {
+            var card = document.getElementById('card-' + cardId);
+            card.style.animation = 'card-spin 0.5s ease';
+            setTimeout(function() { card.style.animation = ''; }, 500);
+        }
+    }
+
+    // BUG 3: Counter shows wrong number and increments randomly
+    var gifCount = 6;
+    document.getElementById('gif-count').textContent = gifCount;
+    setInterval(function() {
+        gifCount += Math.floor(Math.random() * 3);
+        document.getElementById('gif-count').textContent = gifCount;
+    }, 3000);
+
+    // BUG 4: Random card drifts off screen
+    setTimeout(function() {
+        var randomCard = document.getElementById('card-' + Math.floor(Math.random() * 6));
+        if (randomCard) {
+            randomCard.style.animation = 'drift-right 8s linear forwards';
+        }
+    }, 10000);
+
+    // BUG 5: Overflow toggles randomly, cards bleed out
+    setInterval(function() {
+        var cards = document.querySelectorAll('.gif-card');
+        var card = cards[Math.floor(Math.random() * cards.length)];
+        if (card) {
+            card.style.overflow = card.style.overflow === 'visible' ? 'hidden' : 'visible';
+        }
+    }, 5000);
+
+    // BUG 6: Header icon changes randomly
+    var icons = ['🖼️', '🔥', '💀', '🤡', '👻', '🎪', '⚠️', '🐛', '💩'];
+    setInterval(function() {
+        document.getElementById('header-icon').textContent = icons[Math.floor(Math.random() * icons.length)];
+    }, 4000);
+
+    // BUG 7: "Load more" duplicates random existing cards instead of loading new ones
+    var dupeCount = 0;
+    document.getElementById('loadMoreBtn').addEventListener('click', function() {
+        var grid = document.getElementById('gifGrid');
+        var cards = grid.querySelectorAll('.gif-card');
+        // BUG: duplicates 2-4 random cards
+        var howMany = 2 + Math.floor(Math.random() * 3);
+        for (var i = 0; i < howMany; i++) {
+            var source = cards[Math.floor(Math.random() * cards.length)];
+            var clone = source.cloneNode(true);
+            dupeCount++;
+            clone.id = 'card-dupe-' + dupeCount;
+            // BUG: cloned card gets random tilt
+            clone.style.transform = 'rotate(' + (Math.random() * 20 - 10) + 'deg)';
+            grid.appendChild(clone);
+        }
+        // BUG: counter jumps wrong amount
+        gifCount += howMany + Math.floor(Math.random() * 10);
+        document.getElementById('gif-count').textContent = gifCount;
+    });
+
+    // BUG 8: One random card slowly grows forever
+    setTimeout(function() {
+        var card = document.getElementById('card-' + Math.floor(Math.random() * 6));
+        if (card) {
+            var scale = 1;
+            setInterval(function() {
+                scale += 0.02;
+                card.style.transform = 'scale(' + scale + ')';
+                card.style.zIndex = 9999;
+            }, 500);
+        }
+    }, 15000);
+
+    // BUG 9: Page title randomly appends characters
+    setInterval(function() {
+        var title = document.getElementById('page-title');
+        var glitchChars = ['_', '?', '!', '#', '~', 'G', 'I', 'F'];
+        if (title.textContent.length < 30) {
+            title.textContent += glitchChars[Math.floor(Math.random() * glitchChars.length)];
+        } else {
+            title.textContent = 'GIF Wall';
+        }
+    }, 2500);
+</script>
+{% endblock %}
