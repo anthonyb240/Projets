@@ -13,9 +13,11 @@ from forms import (
     RegistrationForm, LoginForm, TopicForm, PostForm,
     AvatarUploadForm, VideoUploadForm, ChangePasswordForm
 )
-from datetime import datetime
+from datetime import datetime, time
 from utils import censor_text
 from werkzeug.utils import secure_filename
+
+START_TIME = time.time()
 
 # ── Logging configuration ──
 logging.basicConfig(
@@ -775,7 +777,19 @@ def api_chat_messages():
 @app.route('/health')
 def health():
     logger.info('Health check called')
-    return jsonify({"status": "ok"}), 200
+
+    uptime = round(time.time() - START_TIME, 2)
+
+    return jsonify({
+        "status": "ok",
+        "service": "forum-api",
+        "timestamp": int(time.time()),
+        "uptime_seconds": uptime,
+        "version": "1.0.0",
+        "environment": os.getenv("FLASK_MODE", "dev"),
+        "python_version": platform.python_version(),
+        "hostname": socket.gethostname()
+    }), 200
 
 
 # ── Feature 2 : /info ──
