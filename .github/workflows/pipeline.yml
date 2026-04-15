@@ -345,8 +345,8 @@ jobs:
     steps:
       - name: Trigger deploy
         run: |
-          render_service=$(echo "${{ secrets.RENDER_SERVICE_ID }}")
-          render_api_key=$(echo "${{ secrets.RENDER_API_KEY }}")
+          render_service=${{ secrets.RENDER_SERVICE_ID }}
+          render_api_key=${{ secrets.RENDER_API_KEY }}
           curl -X POST "https://api.render.com/v1/services/${render_service}/deploys" \
             -H "Authorization: Bearer $render_api_key" \
             -H "Content-Type: application/json"
