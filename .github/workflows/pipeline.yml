@@ -14,7 +14,7 @@ jobs:
   changes:
     name: Detect changes
     runs-on: ubuntu-latest
-    environment: Configure render_api
+    environment:  render_api
     outputs:
       python: ${{ steps.filter.outputs.python }}
       docker: ${{ steps.filter.outputs.docker }}
@@ -42,7 +42,7 @@ jobs:
   gitleaks:
     name: Gitleaks - Detection de secrets
     runs-on: ubuntu-latest
-    environment: Configure render_api
+    environment:  render_api
     steps:
       - uses: actions/checkout@v4
         with:
@@ -58,7 +58,7 @@ jobs:
   trufflehog:
     name: TruffleHog - Detection de secrets
     runs-on: ubuntu-latest
-    environment: Configure render_api
+    environment:  render_api
     steps:
       - uses: actions/checkout@v4
         with:
@@ -73,7 +73,7 @@ jobs:
   lint:
     name: Lint - Flake8
     runs-on: ubuntu-latest
-    environment: Configure render_api
+    environment:  render_api
     needs: [changes]
     if: needs.changes.outputs.python == 'true'
     steps:
@@ -106,7 +106,7 @@ jobs:
     name: SAST - Bandit
     runs-on: ubuntu-latest
     needs: [lint, changes]
-    environment: Configure render_api
+    environment:  render_api
     if: needs.changes.outputs.python == 'true'
     steps:
       - uses: actions/checkout@v4
@@ -139,7 +139,7 @@ jobs:
     name: SAST - Semgrep
     runs-on: ubuntu-latest
     needs: [lint, changes]
-    environment: Configure render_api
+    environment:  render_api
     if: needs.changes.outputs.python == 'true'
     steps:
       - uses: actions/checkout@v4
@@ -177,7 +177,7 @@ jobs:
     name: SCA - pip-audit
     runs-on: ubuntu-latest
     needs: [lint, changes]
-    environment: Configure render_api
+    environment:  render_api
     if: needs.changes.outputs.python == 'true'
     steps:
       - uses: actions/checkout@v4
@@ -207,7 +207,7 @@ jobs:
   trivy-fs:
     name: Trivy - Scan pre-build (filesystem)
     runs-on: ubuntu-latest
-    environment: Configure render_api
+    environment:  render_api
     needs: [sast-bandit, sast-semgrep, sca]
     if: |
       always() &&
@@ -235,7 +235,7 @@ jobs:
   docker-build-scan:
     name: Docker - Build & Trivy scan image
     runs-on: ubuntu-latest
-    environment: Configure render_api
+    environment:  render_api
     needs: [trivy-fs, changes]
     if: |
       always() &&
@@ -274,7 +274,7 @@ jobs:
   dast-wapiti:
     name: DAST - Wapiti (via docker-compose)
     runs-on: ubuntu-latest
-    environment: Configure render_api
+    environment:  render_api
     needs: [docker-build-scan]
     steps:
       - uses: actions/checkout@v4
@@ -324,7 +324,7 @@ jobs:
   docker-push:
     name: Deploy - Push DockerHub
     runs-on: ubuntu-latest
-    environment: Configure render_api
+    environment:  render_api
     permissions:
       contents: read
       packages: write
@@ -353,7 +353,7 @@ jobs:
     name: Deploy to Render
     needs: docker-push
     runs-on: ubuntu-latest
-    environment: Configure render_api
+    environment:  render_api
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -361,6 +361,6 @@ jobs:
       - name: Trigger deploy
         run: |
           curl -s -w "\nHTTP Status: %{http_code}\n" \
-            -X POST "https://api.render.com/v1/services/${secrets.RENDER_SERVICE}/deploys" \
-            -H "Authorization: Bearer ${secrets.RENDER_KEY}" \
+            -X POST "https://api.render.com/v1/services/${{secrets.RENDER_SERVICE}}/deploys" \
+            -H "Authorization: Bearer ${{secrets.RENDER_KEY}}" \
             -H "Content-Type: application/json"
