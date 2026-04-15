@@ -364,3 +364,73 @@ jobs:
             -X POST "https://api.render.com/v1/services/${{secrets.RENDER_SERVICE}}/deploys" \
             -H "Authorization: Bearer ${{secrets.RENDER_KEY}}" \
             -H "Content-Type: application/json"
+
+
+  health-check:
+    name: Verify & Rollback if needed
+    needs: render-deploy
+    runs-on: ubuntu-latest
+    environment: render_api
+    steps:
+      - name: Check deploy status
+        id: check
+        run: |
+          # Récupère le dernier deploy
+          response=$(curl -s \
+            "https://api.render.com/v1/services/${{ secrets.RENDER_SERVICE }}/deploys?limit=2" \
+            -H "Authorization: Bearer ${{ secrets.RENDER_KEY }}")
+
+          current_status=$(echo "$response" | jq -r '.[0].status')
+          previous_deploy_id=$(echo "$response" | jq -r '.[1].id')
+
+          echo "Current deploy status: $current_status"
+          echo "Previous deploy ID: $previous_deploy_id"
+
+          if [ "$current_status" = "live" ]; then
+            echo "Deploy OK"
+            echo "rollback=false" >> $GITHUB_OUTPUT
+          else
+            echo "Deploy failed or unhealthy (status: $current_status)"
+            echo "rollback=true" >> $GITHUB_OUTPUT
+            echo "previous_id=$previous_deploy_id" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Health check endpoint
+        if: steps.check.outputs.rollback == 'false'
+        id: health
+        run: |
+          # Remplace par ton URL Render
+          status_code=$(curl -s -o /dev/null -w "%{http_code}" \
+            "https://ton-service.onrender.com/health" \
+            --max-time 10)
+
+          echo "Health check HTTP status: $status_code"
+
+          if [ "$status_code" -ne 200 ]; then
+            echo "Health check failed"
+            echo "rollback=true" >> $GITHUB_OUTPUT
+
+            # Récupère l'ID du deploy précédent
+            response=$(curl -s \
+              "https://api.render.com/v1/services/${{ secrets.RENDER_SERVICE }}/deploys?limit=2" \
+              -H "Authorization: Bearer ${{ secrets.RENDER_KEY }}")
+            previous_id=$(echo "$response" | jq -r '.[1].id')
+            echo "previous_id=$previous_id" >> $GITHUB_OUTPUT
+          else
+            echo "rollback=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Rollback
+        if: steps.check.outputs.rollback == 'true' || steps.health.outputs.rollback == 'true'
+        run: |
+          PREVIOUS_ID="${{ steps.check.outputs.previous_id }}${{ steps.health.outputs.previous_id }}"
+
+          echo "Rolling back to deploy: $PREVIOUS_ID"
+
+          curl -s -w "\nHTTP Status: %{http_code}\n" \
+            -X POST "https://api.render.com/v1/services/${{ secrets.RENDER_SERVICE }}/deploys/$PREVIOUS_ID/rollback" \
+            -H "Authorization: Bearer ${{ secrets.RENDER_KEY }}" \
+            -H "Content-Type: application/json"
+
+          echo "Rollback triggered"
+          exit 1
