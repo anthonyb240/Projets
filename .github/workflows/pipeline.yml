@@ -9,12 +9,11 @@ on:
 jobs:
   # ============================================================
   # Job 0 : Detecter les changements de fichiers Python
-  # (Lab 5 : CI/CD intelligente - ne lancer que si necessaire)
   # ============================================================
   changes:
     name: Detect changes
     runs-on: ubuntu-latest
-    environment:  render_api
+    environment: render_api
     outputs:
       python: ${{ steps.filter.outputs.python }}
       docker: ${{ steps.filter.outputs.docker }}
@@ -38,11 +37,10 @@ jobs:
   # Lab 1 : Qualite & Secrets (jobs paralleles)
   # ============================================================
 
-  # Job 1a : Detection de secrets avec Gitleaks (+ custom regex)
   gitleaks:
     name: Gitleaks - Detection de secrets
     runs-on: ubuntu-latest
-    environment:  render_api
+    environment: render_api
     steps:
       - uses: actions/checkout@v4
         with:
@@ -54,11 +52,10 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.TOKEN }}
           GITLEAKS_CONFIG: gitleaks.toml
 
-  # Job 1b : Detection de secrets avec TruffleHog (alternative)
   trufflehog:
     name: TruffleHog - Detection de secrets
     runs-on: ubuntu-latest
-    environment:  render_api
+    environment: render_api
     steps:
       - uses: actions/checkout@v4
         with:
@@ -69,11 +66,10 @@ jobs:
         with:
           extra_args: --only-verified
 
-  # Job 1c : Lint Python avec Flake8
   lint:
     name: Lint - Flake8
     runs-on: ubuntu-latest
-    environment:  render_api
+    environment: render_api
     needs: [changes]
     if: needs.changes.outputs.python == 'true'
     steps:
@@ -97,16 +93,14 @@ jobs:
         run: flake8 . --max-line-length=120 --statistics
 
   # ============================================================
-  # Lab 2 : SAST & SCA (paralleles, apres lint)
+  # Lab 2 : SAST & SCA
   # ============================================================
 
-  # Job 2a : SAST avec Bandit
   sast-bandit:
-  
     name: SAST - Bandit
     runs-on: ubuntu-latest
     needs: [lint, changes]
-    environment:  render_api
+    environment: render_api
     if: needs.changes.outputs.python == 'true'
     steps:
       - uses: actions/checkout@v4
@@ -134,12 +128,11 @@ jobs:
           name: bandit-report
           path: bandit-report.json
 
-  # Job 2b : SAST avec Semgrep (bonus Lab 2 + challenge policy-as-code)
   sast-semgrep:
     name: SAST - Semgrep
     runs-on: ubuntu-latest
     needs: [lint, changes]
-    environment:  render_api
+    environment: render_api
     if: needs.changes.outputs.python == 'true'
     steps:
       - uses: actions/checkout@v4
@@ -172,12 +165,11 @@ jobs:
             semgrep-default-report.json
             semgrep-custom-report.json
 
-  # Job 2c : SCA avec pip-audit
   sca:
     name: SCA - pip-audit
     runs-on: ubuntu-latest
     needs: [lint, changes]
-    environment:  render_api
+    environment: render_api
     if: needs.changes.outputs.python == 'true'
     steps:
       - uses: actions/checkout@v4
@@ -203,11 +195,10 @@ jobs:
   # Lab 3 : Docker & Image Security
   # ============================================================
 
-  # Job 3a : Scan pre-build du Dockerfile avec Trivy (filesystem)
   trivy-fs:
     name: Trivy - Scan pre-build (filesystem)
     runs-on: ubuntu-latest
-    environment:  render_api
+    environment: render_api
     needs: [sast-bandit, sast-semgrep, sca]
     if: |
       always() &&
@@ -231,11 +222,10 @@ jobs:
           name: trivy-fs-report
           path: trivy-fs-report.txt
 
-  # Job 3b : Build Docker + Scan image avec Trivy (post-build)
   docker-build-scan:
     name: Docker - Build & Trivy scan image
     runs-on: ubuntu-latest
-    environment:  render_api
+    environment: render_api
     needs: [trivy-fs, changes]
     if: |
       always() &&
@@ -270,11 +260,10 @@ jobs:
   # Lab 4 : DAST & Deploy
   # ============================================================
 
-  # Job 4a : DAST avec Wapiti via docker-compose
   dast-wapiti:
     name: DAST - Wapiti (via docker-compose)
     runs-on: ubuntu-latest
-    environment:  render_api
+    environment: render_api
     needs: [docker-build-scan]
     steps:
       - uses: actions/checkout@v4
@@ -320,11 +309,14 @@ jobs:
           name: wapiti-report
           path: reports/
 
-  # Job 4b : Push vers DockerHubsa
+  # ============================================================
+  # Lab 5 : Push Docker + Deploy Render + Health Check & Rollback
+  # ============================================================
+
   docker-push:
-    name: Deploy - Push DockerHub
+    name: Deploy - Push GHCR
     runs-on: ubuntu-latest
-    environment:  render_api
+    environment: render_api
     permissions:
       contents: read
       packages: write
@@ -342,9 +334,9 @@ jobs:
             --secret id=ctf_flag,src=<(echo "${{ secrets.CTF_FLAG }}") \
             --secret id=db_password,src=<(echo "${{ secrets.DB_PASSWORD }}") \
             --secret id=api_key,src=<(echo "${{ secrets.API_KEY }}") \
-            -t ghcr.io/${var_repo}:latest . \
+            -t ghcr.io/${var_repo}:latest \
             -t ghcr.io/${var_repo}:${{ github.sha }} \
-            -t ghcr.io/${var_repo}:dev
+            -t ghcr.io/${var_repo}:dev .
           docker push ghcr.io/${var_repo}:latest
           docker push ghcr.io/${var_repo}:${{ github.sha }}
           docker push ghcr.io/${var_repo}:dev
@@ -353,18 +345,14 @@ jobs:
     name: Deploy to Render
     needs: docker-push
     runs-on: ubuntu-latest
-    environment:  render_api
+    environment: render_api
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
       - name: Trigger deploy
         run: |
           curl -s -w "\nHTTP Status: %{http_code}\n" \
-            -X POST "https://api.render.com/v1/services/${{secrets.RENDER_SERVICE}}/deploys" \
-            -H "Authorization: Bearer ${{secrets.RENDER_KEY}}" \
+            -X POST "https://api.render.com/v1/services/${{ secrets.RENDER_SERVICE }}/deploys" \
+            -H "Authorization: Bearer ${{ secrets.RENDER_KEY }}" \
             -H "Content-Type: application/json"
-
 
   health-check:
     name: Verify & Rollback if needed
@@ -372,65 +360,88 @@ jobs:
     runs-on: ubuntu-latest
     environment: render_api
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Wait for deploy to stabilize
+        run: |
+          echo "Waiting 90s for Render deploy to stabilize..."
+          sleep 90
+
       - name: Check deploy status
         id: check
         run: |
-          # Récupère le dernier deploy
           response=$(curl -s \
-            "https://api.render.com/v1/services/${{ secrets.RENDER_SERVICE }}/deploys?limit=2" \
+            "https://api.render.com/v1/services/${{ secrets.RENDER_SERVICE }}/deploys?limit=5" \
             -H "Authorization: Bearer ${{ secrets.RENDER_KEY }}")
 
           current_status=$(echo "$response" | jq -r '.[0].status')
-          previous_deploy_id=$(echo "$response" | jq -r '.[1].id')
+          current_id=$(echo "$response" | jq -r '.[0].id')
 
+          echo "Current deploy ID: $current_id"
           echo "Current deploy status: $current_status"
-          echo "Previous deploy ID: $previous_deploy_id"
+
+          # Cherche le dernier deploy "live" different du courant
+          previous_live_id=$(echo "$response" | jq -r --arg cid "$current_id" \
+            '[.[] | select(.status == "live" and .id != $cid)] | .[0].id // empty')
+
+          echo "Previous live deploy ID: $previous_live_id"
 
           if [ "$current_status" = "live" ]; then
-            echo "Deploy OK"
+            echo "Deploy is live"
             echo "rollback=false" >> $GITHUB_OUTPUT
-          else
-            echo "Deploy failed or unhealthy (status: $current_status)"
+          elif [ -n "$previous_live_id" ]; then
+            echo "Deploy failed (status: $current_status) - rollback possible"
             echo "rollback=true" >> $GITHUB_OUTPUT
-            echo "previous_id=$previous_deploy_id" >> $GITHUB_OUTPUT
+            echo "previous_sha=$previous_live_id" >> $GITHUB_OUTPUT
+          else
+            echo "Deploy failed but no previous live deploy to rollback to"
+            echo "rollback=false" >> $GITHUB_OUTPUT
           fi
 
       - name: Health check endpoint
         if: steps.check.outputs.rollback == 'false'
         id: health
         run: |
-          # Remplace par ton URL Render
           status_code=$(curl -s -o /dev/null -w "%{http_code}" \
             "https://projets-2oho.onrender.com/health" \
-            --max-time 10)
+            --max-time 15)
 
           echo "Health check HTTP status: $status_code"
 
           if [ "$status_code" -ne 200 ]; then
-            echo "Health check failed"
+            echo "Health check failed (HTTP $status_code)"
             echo "rollback=true" >> $GITHUB_OUTPUT
-
-            # Récupère l'ID du deploy précédent
-            response=$(curl -s \
-              "https://api.render.com/v1/services/${{ secrets.RENDER_SERVICE }}/deploys?limit=2" \
-              -H "Authorization: Bearer ${{ secrets.RENDER_KEY }}")
-            previous_id=$(echo "$response" | jq -r '.[1].id')
-            echo "previous_id=$previous_id" >> $GITHUB_OUTPUT
           else
+            echo "Health check passed"
             echo "rollback=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Rollback
+      - name: Rollback via image SHA
         if: steps.check.outputs.rollback == 'true' || steps.health.outputs.rollback == 'true'
         run: |
-          PREVIOUS_ID="${{ steps.check.outputs.previous_id }}${{ steps.health.outputs.previous_id }}"
+          # Recupere le SHA du commit precedent
+          PREV_SHA=$(git rev-parse HEAD~1)
+          var_repo=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          ROLLBACK_IMAGE="ghcr.io/${var_repo}:${PREV_SHA}"
 
-          echo "Rolling back to deploy: $PREVIOUS_ID"
+          echo "Current commit: ${{ github.sha }}"
+          echo "Rolling back to image: $ROLLBACK_IMAGE"
 
-          curl -s -w "\nHTTP Status: %{http_code}\n" \
-            -X POST "https://api.render.com/v1/services/${{ secrets.RENDER_SERVICE }}/deploys/$PREVIOUS_ID/rollback" \
-            -H "Authorization: Bearer ${{ secrets.RENDER_KEY }}" \
-            -H "Content-Type: application/json"
+          # Verifie que l'image existe
+          if docker manifest inspect "$ROLLBACK_IMAGE" > /dev/null 2>&1; then
+            echo "Image found, triggering rollback deploy on Render..."
 
-          echo "Rollback triggered"
+            curl -s -w "\nHTTP Status: %{http_code}\n" \
+              -X POST "https://api.render.com/v1/services/${{ secrets.RENDER_SERVICE }}/deploys" \
+              -H "Authorization: Bearer ${{ secrets.RENDER_KEY }}" \
+              -H "Content-Type: application/json" \
+              -d "{\"imageUrl\": \"${ROLLBACK_IMAGE}\"}"
+
+            echo "Rollback triggered to $ROLLBACK_IMAGE"
+          else
+            echo "WARNING: Previous image $ROLLBACK_IMAGE not found in registry"
+            echo "Cannot rollback - no previous image available"
+          fi
+
           exit 1
