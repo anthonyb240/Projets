@@ -796,7 +796,7 @@ def health():
     if not os.getenv("SECRET_KEY"):
         errors.append("missing SECRET_KEY")
 
-    status_code = 200 if not errors else 400
+    status_code = 400
 
     return jsonify({
         "status": "ok" if not errors else "unhealthy",
