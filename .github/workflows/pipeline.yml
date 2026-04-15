@@ -419,7 +419,7 @@ jobs:
           fi
 
       - name: Rollback via image SHA
-        if: steps.check.outputs.rollback == 'true' || steps.health.outputs.healthy == 'false'
+        if: steps.check.outputs.rollback == 'true' || steps.health.outputs.rollback == 'false'
         run: |
           # Recupere le SHA du commit precedent
           PREV_SHA=$(git rev-parse HEAD~1)
