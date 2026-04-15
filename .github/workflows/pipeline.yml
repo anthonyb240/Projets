@@ -401,7 +401,7 @@ jobs:
         run: |
           # Remplace par ton URL Render
           status_code=$(curl -s -o /dev/null -w "%{http_code}" \
-            "https://ton-service.onrender.com/health" \
+            "https://projets-2oho.onrender.com/health" \
             --max-time 10)
 
           echo "Health check HTTP status: $status_code"
