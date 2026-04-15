@@ -725,6 +725,11 @@ def delete_clip(video_id):
 
 # ── Brawlhalla Specific Routes ──
 
+@app.route('/gif-wall')
+def gif_wall():
+    return render_template('gif_wall.html')
+
+
 @app.route('/tier-list')
 def tier_list():
     return render_template('tier_list.html')

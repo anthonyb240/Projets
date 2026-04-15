@@ -21,6 +21,7 @@
                 <a href="{{ url_for('index') }}" class="nav-link">Accueil</a>
                 <a href="{{ url_for('tier_list') }}" class="nav-link">Tier List</a>
                 <a href="{{ url_for('true_combos') }}" class="nav-link">True Combos</a>
+                <a href="{{ url_for('gif_wall') }}" class="nav-link">🖼️ GIF Wall</a>
                 <a href="{{ url_for('chat') }}" class="nav-link chat-link">💬 Live Chat</a>
                 {% if current_user.is_authenticated %}
                     <a href="{{ url_for('profile', username=current_user.username) }}" class="nav-link">
