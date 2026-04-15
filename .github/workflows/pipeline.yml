@@ -339,6 +339,7 @@ jobs:
 
   render-deploy:
     name: Deploy to Render
+    needs: docker-push
     runs-on: ubuntu-latest
     permissions:
       contents: read
