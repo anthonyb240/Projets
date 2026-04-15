@@ -792,9 +792,7 @@ def health():
         "timestamp": int(time.time()),
         "uptime_seconds": uptime,
         "version": "1.0.0",
-        "environment": os.getenv("FLASK_MODE", "dev"),
-        "python_version": platform.python_version(),
-        "hostname": socket.gethostname()
+        "environment": os.getenv("FLASK_MODE", "dev")
     }), 200
 
 
