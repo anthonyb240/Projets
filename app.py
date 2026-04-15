@@ -779,6 +779,7 @@ def api_chat_messages():
 
 # ── Feature 2 : /health ──
 
+
 @app.route('/health')
 def health():
     logger.info('Health check called')
@@ -808,6 +809,7 @@ def health():
     }), status_code
 
 # ── Feature 2 : /info ──
+
 
 @app.route('/info')
 def info():
