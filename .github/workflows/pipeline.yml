@@ -309,7 +309,7 @@ jobs:
           name: wapiti-report
           path: reports/
 
-  # Job 4b : Push vers DockerHubs
+  # Job 4b : Push vers DockerHubsa
   docker-push:
     name: Deploy - Push DockerHub
     runs-on: ubuntu-latest
