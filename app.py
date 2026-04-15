@@ -3,6 +3,7 @@ import logging
 import random
 import platform
 import socket
+import time
 from flask import Flask, render_template, redirect, url_for, flash, request, abort, send_from_directory, jsonify
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from flask_wtf.csrf import CSRFProtect
@@ -13,7 +14,7 @@ from forms import (
     RegistrationForm, LoginForm, TopicForm, PostForm,
     AvatarUploadForm, VideoUploadForm, ChangePasswordForm
 )
-from datetime import datetime, time
+from datetime import datetime
 from utils import censor_text
 from werkzeug.utils import secure_filename
 
