@@ -362,6 +362,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
 
       - name: Wait for deploy to stabilize
         run: |
