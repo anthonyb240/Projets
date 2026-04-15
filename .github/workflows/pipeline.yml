@@ -343,7 +343,7 @@ jobs:
       permissions:
         contents: read
         packages: write
-        
+      needs: docker-push
       steps:
         - name: Trigger deploy
           run: |
