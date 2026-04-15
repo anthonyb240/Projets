@@ -799,7 +799,7 @@ def health():
     status_code = 400
 
     return jsonify({
-        "status": "ok" if not errors else "unhealthy",
+        "status": "unhealthy",
         "errors": errors,
         "service": "forum-api",
         "timestamp": int(time.time()),
