@@ -90,6 +90,7 @@ def index():
     total_topics = Topic.query.count()
     total_posts = Post.query.count()
     total_users = User.query.count()
+    print(f"Hello from {socket.gethostname()}")
     return render_template('index.html',
                            categories=categories,
                            total_topics=total_topics,
