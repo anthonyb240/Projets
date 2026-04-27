@@ -570,6 +570,9 @@ jobs:
     needs: docker-push
     # CE JOB S'EXÉCUTE SUR VOTRE MACHINE LOCALE
     runs-on: self-hosted
+    permissions:
+      contents: read
+      packages: read
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -577,9 +580,7 @@ jobs:
       - name: Login GHCR
         shell: powershell
         run: |
-          $token = "${{ secrets.TOKEN }}"
-          if (-not $token) { $token = "${{ secrets.GITHUB_TOKEN }}" }
-          $token | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+          "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
       - name: Pull image GHCR
         shell: powershell
