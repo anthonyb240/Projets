@@ -2,7 +2,8 @@ version: '3.8'
 
 services:
   app:
-    image: app-securisee:latest
+    # Utilise l'image du registre avec un tag variable pour forcer le Rolling Update
+    image: ${DOCKER_IMAGE:-ghcr.io/anthonyb240/projets:latest}
     networks:
       - frontend
     environment:

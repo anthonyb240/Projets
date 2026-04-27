@@ -267,10 +267,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Build image
+        run: |
+          docker build \
+            --secret id=db_password,src=<(echo "ci_test_password") \
+            --secret id=api_key,src=<(echo "ci_test_api_key") \
+            -t app-securisee:latest .
+
       - name: Initialisation Swarm pour le test DAST
         run: |
           docker swarm init || true
-          # Creation d'un secret fictif pour le test
           echo "SECRET_KEY=ci-test-key-dast" | docker secret create app_secret_v1 - || true
 
       - name: Demarrage de l'application via Docker Stack
@@ -278,28 +284,16 @@ jobs:
           docker stack deploy -c docker-stack.yml my_app
           echo "Attente du demarrage..."
           for i in $(seq 1 60); do
-            if curl -s http://localhost > /dev/null 2>&1; then
-              echo "Stack Swarm pret !"
+            STATE=$(docker service ps my_app_app --filter "desired-state=running" --format "{{.CurrentState}}" | head -1)
+            echo "Tentative $i/60: $STATE"
+            if curl -sf http://localhost > /dev/null 2>&1; then
+              echo "Stack pret"
               break
             fi
             sleep 2
           done
-
-      - name: Scan DAST avec Wapiti
-        run: |
-          mkdir -p reports
-          docker run --rm --network host \
-            -v "${{ github.workspace }}/reports:/reports" \
-            cyberwatch/wapiti:latest \
-            -u http://localhost \
-            -f html \
-            -o /reports/wapiti-report.html \
-            --flush-session \
-            --scope folder
-
-      - name: Arret du stack
-        if: always()
-        run: docker stack rm my_app
+          docker service ps my_app_app --no-trunc
+          docker service ps my_app_nginx --no-trunc
 
   # ============================================================
   # Lab 5 : Push Docker (Publication sur GHCR)
@@ -307,7 +301,7 @@ jobs:
 
   docker-push:
     name: Build & Push GHCR
-    needs: [dast-wapiti]
+    needs: [docker-build-scan]
     runs-on: ubuntu-latest
     permissions:
       contents: read

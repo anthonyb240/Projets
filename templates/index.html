@@ -6,7 +6,8 @@
 <section class="hero">
     <div class="hero-content">
         <h1 class="hero-title">Bienvenue sur <span class="gradient-text">ValhallaForum</span></h1>
-        <p class="hero-subtitle">Rejoignez la communauté Brawlhalla, partagez vos actions et débattez des patchs.</p>
+        <p class="hero-subtitle">Rejoignez la communauté Brawlhalla
+        </p>
         <div class="hero-stats">
             <div class="stat-item">
                 <span class="stat-number">{{ total_topics }}</span>
@@ -39,7 +40,7 @@
                 <span class="meta-badge">{{ cat.topic_count }} sujets</span>
                 <span class="meta-badge">{{ cat.post_count }} messages</span>
                 {% if cat.last_activity %}
-                    <span class="meta-time">{{ cat.last_activity|timeago }}</span>
+                <span class="meta-time">{{ cat.last_activity|timeago }}</span>
                 {% endif %}
             </div>
         </a>
