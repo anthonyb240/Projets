@@ -566,7 +566,7 @@ jobs:
           docker push ghcr.io/${var_repo}:${{ github.sha }}
   # Test
   swarm-deploy:
-    name: Local Swarm Deploy
+    name: Local Swarm Deploy (OpenBao + Stack)
     needs: docker-push
     # CE JOB S'EXÉCUTE SUR VOTRE MACHINE LOCALE
     runs-on: self-hosted
@@ -574,8 +574,25 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Deploy to Local Swarm
+      - name: Pull image GHCR
         shell: powershell
         run: |
-          # Utilisation du script local pour mettre à jour le stack
-          .\manage-swarm.ps1 -Action deploy
+          $repo = "${{ github.repository }}".ToLower()
+          docker pull "ghcr.io/${repo}:latest"
+
+      - name: Deploy stack + OpenBao + bootstrap
+        shell: powershell
+        env:
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          API_KEY: ${{ secrets.API_KEY }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+        run: |
+          $sk = if ($env:SECRET_KEY) { $env:SECRET_KEY } else { "ci-fallback-flask-key-32chars-1234567890" }
+          $ak = if ($env:API_KEY)    { $env:API_KEY }    else { "ci-fallback-api" }
+          $db = if ($env:DB_PASSWORD){ $env:DB_PASSWORD } else { "ci-fallback-db" }
+          .\manage-swarm.ps1 -Action deploy -SecretKey $sk -ApiKey $ak -DbPassword $db
+
+      - name: Status final
+        if: always()
+        shell: powershell
+        run: .\manage-swarm.ps1 -Action status

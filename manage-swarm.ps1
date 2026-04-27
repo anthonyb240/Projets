@@ -1,16 +1,18 @@
 # manage-swarm.ps1
-# Script utilitaire pour gérer Docker Swarm, les secrets et les déploiements
+# Orchestre OpenBao + agent + Swarm stack en local
+# Lance par self-hosted runner sur push GitHub
 
 param (
     [Parameter(Mandatory=$false)]
-    [ValidateSet("init", "deploy", "rotate-secret", "blue-green-switch", "status")]
+    [ValidateSet("init", "deploy", "rotate-bao", "status", "destroy")]
     $Action = "status",
 
     [Parameter(Mandatory=$false)]
-    $SecretValue = "",
-
+    $SecretKey = "",
     [Parameter(Mandatory=$false)]
-    $TargetColor = "blue"
+    $ApiKey = "",
+    [Parameter(Mandatory=$false)]
+    $DbPassword = ""
 )
 
 function Check-Swarm {
@@ -18,85 +20,161 @@ function Check-Swarm {
     return $status -eq "active"
 }
 
+function Wait-OpenBao {
+    for ($i = 1; $i -le 20; $i++) {
+        try {
+            $r = Invoke-WebRequest -UseBasicParsing -Uri http://localhost:8200/v1/sys/health -TimeoutSec 3 -ErrorAction Stop
+            if ($r.StatusCode -eq 200) { Write-Host "OpenBao ready" -ForegroundColor Green; return $true }
+        } catch {}
+        Start-Sleep 2
+    }
+    return $false
+}
+
+function Bootstrap-OpenBao {
+    param($SK, $AK, $DBP)
+    Write-Host "Bootstrap OpenBao..." -ForegroundColor Yellow
+
+    # KV v2 deja monte en mode dev
+    docker exec -e BAO_ADDR=http://127.0.0.1:8200 -e BAO_TOKEN=root openbao `
+        bao kv put secret/forum/dev SECRET_KEY=$SK API_KEY=$AK DB_PASSWORD=$DBP | Out-Null
+
+    # Active AppRole (idempotent)
+    docker exec -e BAO_ADDR=http://127.0.0.1:8200 -e BAO_TOKEN=root openbao `
+        bao auth enable approle 2>$null
+
+    # Policy
+    $policy = "path `"secret/data/forum/dev`" { capabilities = [`"read`"] }"
+    docker exec -e BAO_ADDR=http://127.0.0.1:8200 -e BAO_TOKEN=root openbao `
+        sh -c "echo '$policy' > /tmp/p.hcl && bao policy write forum-read /tmp/p.hcl" | Out-Null
+
+    # Role
+    docker exec -e BAO_ADDR=http://127.0.0.1:8200 -e BAO_TOKEN=root openbao `
+        bao write auth/approle/role/forum token_policies=forum-read token_ttl=1h token_max_ttl=4h | Out-Null
+
+    # Recupere creds
+    $roleId = docker exec -e BAO_ADDR=http://127.0.0.1:8200 -e BAO_TOKEN=root openbao `
+        bao read -field=role_id auth/approle/role/forum/role-id
+    $secretId = docker exec -e BAO_ADDR=http://127.0.0.1:8200 -e BAO_TOKEN=root openbao `
+        bao write -f -field=secret_id auth/approle/role/forum/secret-id
+
+    if (-not (Test-Path "openbao")) { New-Item -ItemType Directory -Path "openbao" | Out-Null }
+    [System.IO.File]::WriteAllText((Resolve-Path "openbao").Path + "\role_id", $roleId)
+    [System.IO.File]::WriteAllText((Resolve-Path "openbao").Path + "\secret_id", $secretId)
+
+    Write-Host "AppRole creds ecrits" -ForegroundColor Green
+}
+
 switch ($Action) {
     "init" {
         if (Check-Swarm) {
-            Write-Host "Docker Swarm est déjà actif." -ForegroundColor Cyan
+            Write-Host "Swarm deja actif." -ForegroundColor Cyan
         } else {
-            Write-Host "Initialisation de Docker Swarm..." -ForegroundColor Yellow
+            Write-Host "Init Swarm..." -ForegroundColor Yellow
             docker swarm init
         }
     }
 
     "deploy" {
-        Write-Host "Déploiement du stack 'my_app'..." -ForegroundColor Yellow
-        # S'assurer que le secret par défaut existe pour le premier déploiement
-        if (-not (docker secret ls --filter "name=app_secret_v1" -q)) {
-            Write-Host "Création du secret initial app_secret_v1..."
-            "SECRET_KEY=initial-swarm-key-123" | docker secret create app_secret_v1 -
+        # Defaults si args vides (CI fallback)
+        if (-not $SecretKey) { $SecretKey = "deploy-fallback-flask-key-32chars-1234567890" }
+        if (-not $ApiKey) { $ApiKey = "deploy-fallback-api-key" }
+        if (-not $DbPassword) { $DbPassword = "deploy-fallback-db-pass" }
+
+        if (-not (Check-Swarm)) {
+            Write-Host "Init Swarm..." -ForegroundColor Yellow
+            docker swarm init
         }
+
+        # Prepare dossiers
+        if (-not (Test-Path "rendered")) { New-Item -ItemType Directory -Path "rendered" | Out-Null }
+
+        # 1. Demarre OpenBao backend
+        Write-Host "Demarrage OpenBao..." -ForegroundColor Yellow
+        docker compose -f docker-compose.openbao.yml up -d openbao
+
+        if (-not (Wait-OpenBao)) {
+            Write-Error "OpenBao pas ready"
+            docker logs openbao --tail 30
+            exit 1
+        }
+
+        # 2. Bootstrap (idempotent)
+        Bootstrap-OpenBao -SK $SecretKey -AK $ApiKey -DBP $DbPassword
+
+        # 3. Demarre agent
+        Write-Host "Demarrage bao-agent..." -ForegroundColor Yellow
+        docker compose -f docker-compose.openbao.yml up -d bao-agent
+
+        # Attend fichier rendu
+        $rendered = $false
+        for ($i = 1; $i -le 15; $i++) {
+            if ((Test-Path "rendered/app.env") -and (Get-Item "rendered/app.env").Length -gt 50) {
+                $rendered = $true
+                Write-Host "Fichier rendu OK ($i*2s)" -ForegroundColor Green
+                break
+            }
+            Start-Sleep 2
+        }
+        if (-not $rendered) {
+            Write-Error "Fichier rendered/app.env vide"
+            docker logs bao-agent --tail 30
+            exit 1
+        }
+
+        # 4. Deploy Swarm stack
+        Write-Host "Deploy Swarm stack..." -ForegroundColor Yellow
         docker stack deploy -c docker-stack.yml my_app
+
+        # 5. Attend replicas
+        for ($i = 1; $i -le 30; $i++) {
+            $replicas = docker service ls --filter name=my_app_app --format "{{.Replicas}}"
+            Write-Host "Tentative $i/30: replicas=$replicas"
+            if ($replicas -eq "2/2") { Write-Host "Stack OK" -ForegroundColor Green; break }
+            Start-Sleep 5
+        }
+
+        # 6. Status final
+        docker stack services my_app
+        Write-Host "`nOpenBao UI: http://localhost:8200 (token=root)" -ForegroundColor Cyan
+        Write-Host "App: http://localhost (Nginx -> Swarm app)" -ForegroundColor Cyan
+        Write-Host "Uptime Kuma: http://localhost:3001" -ForegroundColor Cyan
     }
 
-    "rotate-secret" {
-        if (-not $SecretValue) {
-            Write-Error "Vous devez fournir -SecretValue pour la rotation."
+    "rotate-bao" {
+        if (-not $SecretKey -or -not $ApiKey -or -not $DbPassword) {
+            Write-Error "Args requis: -SecretKey -ApiKey -DbPassword"
             return
         }
-
-        # Déterminer la nouvelle version
-        $existing = docker secret ls --filter "name=app_secret_v" --format "{{.Name}}"
-        $latestVersion = 1
-        foreach ($name in $existing) {
-            if ($name -match "v(\d+)") {
-                $v = [int]$matches[1]
-                if ($v -gt $latestVersion) { $latestVersion = $v }
-            }
-        }
-        $newVersion = $latestVersion + 1
-        $newName = "app_secret_v$newVersion"
-
-        Write-Host "Rotation du secret : Création de $newName..." -ForegroundColor Yellow
-        $SecretValue | docker secret create $newName -
-
-        Write-Host "Mise à jour du service pour utiliser le nouveau secret..."
-        # On met à jour le fichier stack.yml (ou on utilise docker service update)
-        # Ici on montre la commande directe pour la rotation immédiate
-        docker service update `
-            --secret-rm app_secret_v$latestVersion `
-            --secret-add source=$newName,target=app_secret `
-            my_app_app
-        
-        Write-Host "Rotation terminée. Swarm effectue un Rolling Update." -ForegroundColor Green
-    }
-
-    "blue-green-switch" {
-        Write-Host "Bascule Blue-Green vers $TargetColor..." -ForegroundColor Yellow
-        # Logique de modification de nginx.conf pour changer l'upstream
-        $confPath = "nginx.conf"
-        $content = Get-Content $confPath
-        
-        if ($TargetColor -eq "green") {
-            $content = $content -replace 'server app:5000;', 'server app_green:5000;'
-            Write-Host "Configuration Nginx mise à jour vers GREEN."
-        } else {
-            $content = $content -replace 'server app_green:5000;', 'server app:5000;'
-            Write-Host "Configuration Nginx mise à jour vers BLUE (Default)."
-        }
-        
-        $content | Set-Content $confPath
-        
-        # Recharger Nginx
-        docker service update --force my_app_nginx
-        Write-Host "Bascule effectuée." -ForegroundColor Green
+        Write-Host "Rotation via OpenBao..." -ForegroundColor Yellow
+        docker exec -e BAO_ADDR=http://127.0.0.1:8200 -e BAO_TOKEN=root openbao `
+            bao kv put secret/forum/dev SECRET_KEY=$SecretKey API_KEY=$ApiKey DB_PASSWORD=$DbPassword
+        Write-Host "Agent re-render <5s, app re-read <15s. Aucun restart." -ForegroundColor Green
     }
 
     "status" {
-        Write-Host "--- Etat du Cluster Swarm ---" -ForegroundColor Cyan
+        Write-Host "--- Swarm ---" -ForegroundColor Cyan
         docker node ls
-        Write-Host "`n--- Services actifs ---" -ForegroundColor Cyan
+        Write-Host "`n--- Services Swarm ---" -ForegroundColor Cyan
         docker service ls
-        Write-Host "`n--- Secrets enregistrés ---" -ForegroundColor Cyan
-        docker secret ls
+        Write-Host "`n--- OpenBao ---" -ForegroundColor Cyan
+        docker ps --filter "name=openbao" --filter "name=bao-agent" --format "table {{.Names}}`t{{.Status}}`t{{.Ports}}"
+        Write-Host "`n--- Fichier rendu ---" -ForegroundColor Cyan
+        if (Test-Path "rendered/app.env") {
+            $info = Get-Item rendered/app.env
+            Write-Host "Path: $($info.FullName)"
+            Write-Host "Size: $($info.Length) bytes"
+            Write-Host "Modified: $($info.LastWriteTime)"
+        } else {
+            Write-Host "AUCUN rendered/app.env" -ForegroundColor Red
+        }
+    }
+
+    "destroy" {
+        Write-Host "Destruction stack + OpenBao..." -ForegroundColor Yellow
+        docker stack rm my_app 2>$null
+        Start-Sleep 10
+        docker compose -f docker-compose.openbao.yml down -v 2>$null
+        Write-Host "Done" -ForegroundColor Green
     }
 }
