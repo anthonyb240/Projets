@@ -2,27 +2,24 @@ version: '3.8'
 
 services:
   app:
-    image: ghcr.io/anthonyb240/projets:latest
+    # Source unique : le registre GitHub
+    image: ${DOCKER_IMAGE:-ghcr.io/anthonyb240/projets:latest}
     networks:
       - frontend
     environment:
       SQLALCHEMY_DATABASE_URI: sqlite:///forum.db
-      SECRETS_FILE: /run/secrets-rendered/app.env
+      # Chemin flexible pour lire les secrets (compatible avec votre volume OU les secrets Swarm)
+      SECRETS_FILE: ${SECRETS_FILE:-/run/secrets/app_secret}
       SECRETS_TTL: "15"
-    volumes:
-      - ./rendered:/run/secrets-rendered:ro
     deploy:
       replicas: 2
       update_config:
         parallelism: 1
         delay: 10s
         order: start-first
-        failure_action: rollback
-      rollback_config:
-        parallelism: 1
-        order: stop-first
-      restart_policy:
-        condition: on-failure
+    secrets:
+      - source: app_secret_v1
+        target: app_secret
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000')"]
       interval: 10s
@@ -54,9 +51,6 @@ services:
       - uptime-kuma:/app/data
     deploy:
       replicas: 1
-      placement:
-        constraints:
-          - node.role == manager
 
 volumes:
   uptime-kuma:
@@ -64,3 +58,7 @@ volumes:
 networks:
   frontend:
     driver: overlay
+
+secrets:
+  app_secret_v1:
+    external: true
