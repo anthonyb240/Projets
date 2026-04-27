@@ -326,6 +326,11 @@ jobs:
           APP_API_KEY: ${{ secrets.API_KEY }}
           APP_DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
         run: |
+          # Fallback si GitHub Secrets vides (sinon Flask crash sur SECRET_KEY=None)
+          : "${APP_SECRET_KEY:=ci-fallback-flask-secret-key-32chars-1234567890}"
+          : "${APP_API_KEY:=ci-fallback-api-key}"
+          : "${APP_DB_PASSWORD:=ci-fallback-db-password}"
+
           docker exec -e BAO_ADDR -e BAO_TOKEN openbao \
             bao kv put secret/forum/dev \
               SECRET_KEY="$APP_SECRET_KEY" \
@@ -373,8 +378,10 @@ jobs:
         run: |
           test -s rendered/app.env
           LINES=$(grep -c "=" rendered/app.env)
-          echo "$LINES secrets rendus"
-          [ "$LINES" -ge 3 ] || exit 1
+          BYTES=$(wc -c < rendered/app.env)
+          echo "$LINES secrets, $BYTES bytes"
+          [ "$LINES" -ge 3 ] || (echo "FAIL: moins de 3 secrets"; exit 1)
+          [ "$BYTES" -gt 50 ] || (echo "FAIL: fichier trop petit, valeurs vides?"; cat rendered/app.env | sed 's/=.*/=REDACTED/'; exit 1)
 
       - name: Init Swarm + deploy stack
         run: |
