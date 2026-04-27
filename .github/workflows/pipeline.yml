@@ -307,7 +307,7 @@ jobs:
 
   docker-push:
     name: Build & Push GHCR
-    needs: [dast-wapiti]
+    needs: [docker-build-scan]
     runs-on: ubuntu-latest
     permissions:
       contents: read
