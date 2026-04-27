@@ -120,7 +120,7 @@ jobs:
         run: pip install bandit
 
       - name: Lancement Bandit
-        run: bandit -r . -f json -o bandit-report.json --exclude ./.venv,./.git || true
+        run: bandit -r . -f json -o bandit-report.json --exclude ./.venv,./.git,./openbao,./rendered,./instance
 
       - name: Sauvegarde du rapport Bandit
         uses: actions/upload-artifact@v4

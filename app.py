@@ -830,7 +830,7 @@ def info():
 @app.route('/random-fail')
 def random_fail():
     try:
-        if random.randint(1, 3) == 1:
+        if random.randint(1, 3) == 1:  # nosec B311 - simulation erreur, non crypto
             raise Exception("Erreur simulee en production")
         logger.info('random-fail: succes')
         return jsonify({"status": "success", "message": "Tout va bien !"}), 200
@@ -858,4 +858,6 @@ def logs_demo():
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
-    app.run(port=5000, debug=True, host="0.0.0.0")
+    # Prod = gunicorn via Dockerfile CMD. Ce bloc = dev local uniquement.
+    debug_mode = os.environ.get('FLASK_DEBUG', '0') == '1'
+    app.run(port=5000, debug=debug_mode, host="0.0.0.0")  # nosec B104

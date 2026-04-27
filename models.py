@@ -33,7 +33,7 @@ class User(UserMixin, db.Model):
             '#00CEC9', '#55EFC4', '#E17055', '#FAB1A0',
             '#FD79A8', '#E84393', '#FDCB6E', '#F39C12',
         ]
-        return random.choice(colors)
+        return random.choice(colors)  # nosec B311 - couleur avatar, non crypto
 
     @property
     def initials(self):
