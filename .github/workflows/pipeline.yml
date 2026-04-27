@@ -482,7 +482,7 @@ jobs:
       - name: Verifier aucun secret en env conteneur app
         run: |
           C=$(docker ps -q --filter "name=my_app_app" | head -1)
-          LEAK=$(docker exec $C env | grep -E "^(SECRET_KEY|API_KEY|DB_PASSWORD)=")
+          LEAK=$(docker exec $C env | grep -E "^(SECRET_KEY|API_KEY|DB_PASSWORD)=" || true)
           if [ -n "$LEAK" ]; then echo "FAIL leak"; echo "$LEAK"; exit 1; fi
           echo "OK aucun secret en env"
 
