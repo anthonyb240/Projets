@@ -68,10 +68,16 @@ function Bootstrap-OpenBao {
     }
 
     if (-not (Test-Path "openbao")) { New-Item -ItemType Directory -Path "openbao" | Out-Null }
-    [System.IO.File]::WriteAllText((Resolve-Path "openbao").Path + "\role_id", $roleId)
-    [System.IO.File]::WriteAllText((Resolve-Path "openbao").Path + "\secret_id", $secretId)
+    # IMPORTANT: ASCII no BOM (PS 5.1 default = UTF-16 BOM, casse l'auth Bao)
+    $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+    [System.IO.File]::WriteAllText((Resolve-Path "openbao").Path + "\role_id", $roleId.Trim(), $utf8NoBom)
+    [System.IO.File]::WriteAllText((Resolve-Path "openbao").Path + "\secret_id", $secretId.Trim(), $utf8NoBom)
 
-    Write-Host "AppRole creds ecrits" -ForegroundColor Green
+    # Hexdump 4 premiers octets pour debug encoding
+    $bytes = [System.IO.File]::ReadAllBytes((Resolve-Path "openbao").Path + "\role_id") | Select-Object -First 8
+    Write-Host "role_id first bytes: $($bytes -join ' ')" -ForegroundColor DarkGray
+
+    Write-Host "AppRole creds ecrits (UTF-8 no BOM)" -ForegroundColor Green
 }
 
 switch ($Action) {
@@ -111,9 +117,9 @@ switch ($Action) {
         # 2. Bootstrap (idempotent)
         Bootstrap-OpenBao -SK $SecretKey -AK $ApiKey -DBP $DbPassword
 
-        # 3. Demarre agent
-        Write-Host "Demarrage bao-agent..." -ForegroundColor Yellow
-        docker compose -f docker-compose.openbao.yml up -d bao-agent
+        # 3. Demarre agent (force recreate pour relire role_id/secret_id frais)
+        Write-Host "Demarrage bao-agent (force recreate)..." -ForegroundColor Yellow
+        docker compose -f docker-compose.openbao.yml up -d --force-recreate bao-agent
 
         # Attend fichier rendu
         $rendered = $false
@@ -126,8 +132,13 @@ switch ($Action) {
             Start-Sleep 2
         }
         if (-not $rendered) {
+            Write-Host "=== Logs bao-agent ===" -ForegroundColor Red
+            docker logs bao-agent --tail 50
+            Write-Host "=== Contenu role_id ===" -ForegroundColor Red
+            Get-Content openbao/role_id
+            Write-Host "=== rendered/ files ===" -ForegroundColor Red
+            Get-ChildItem rendered/ -Force
             Write-Error "Fichier rendered/app.env vide"
-            docker logs bao-agent --tail 30
             exit 1
         }
 
