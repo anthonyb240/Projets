@@ -1,0 +1,34 @@
+services:
+  openbao:
+    image: openbao/openbao:latest
+    container_name: openbao
+    cap_add: [IPC_LOCK]
+    environment:
+      BAO_DEV_ROOT_TOKEN_ID: root
+      BAO_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+    ports: ["8200:8200"]
+
+  bao-agent:
+    image: openbao/openbao:latest
+    container_name: bao-agent
+    user: "0:0"
+    depends_on: [openbao]
+    volumes:
+      - ./openbao:/etc/openbao:ro
+      - app-secrets:/run/secrets-rendered
+    command: ["bao", "agent", "-config=/etc/openbao/agent.hcl"]
+
+  app:
+    build: .
+    container_name: forum-app
+    depends_on: [bao-agent]
+    ports: ["5000:5000"]
+    environment:
+      SECRETS_FILE: /run/secrets-rendered/app.env
+      SECRETS_TTL: "15"
+      SQLALCHEMY_DATABASE_URI: sqlite:///forum.db
+    volumes:
+      - app-secrets:/run/secrets-rendered:ro
+
+volumes:
+  app-secrets:

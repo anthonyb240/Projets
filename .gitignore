@@ -4,3 +4,5 @@ __pycache__/
 *.pyc
 *.db
 static/aatvl5xf/
+openbao/role_id
+openbao/secret_id
