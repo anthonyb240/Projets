@@ -397,24 +397,43 @@ jobs:
           docker service ps my_app_app --no-trunc
 
       - name: Verifier app via Nginx
-        timeout-minutes: 5
+        timeout-minutes: 8
         run: |
-          for i in $(seq 1 60); do
-            curl -sf http://localhost > /dev/null && echo "App OK" && exit 0
-            echo "Tentative $i/60 wait..."
+          # 1. Test app DIRECTEMENT (sans nginx) via docker exec
+          echo "=== Test direct app:5000 (depuis conteneur) ==="
+          for i in $(seq 1 30); do
+            C=$(docker ps -q --filter "name=my_app_app" | head -1)
+            if [ -n "$C" ]; then
+              CODE=$(docker exec $C python -c "import urllib.request; r=urllib.request.urlopen('http://localhost:5000', timeout=3); print(r.status)" 2>&1 || true)
+              echo "Tentative $i/30 direct: $CODE"
+              if echo "$CODE" | grep -q "^200$"; then
+                echo "App repond direct sur 5000"
+                break
+              fi
+            fi
+            sleep 2
+          done
+
+          # 2. Test via Nginx
+          echo "=== Test via Nginx localhost:80 ==="
+          for i in $(seq 1 30); do
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost || echo "000")
+            echo "Tentative $i/30 nginx: HTTP $HTTP_CODE"
+            [ "$HTTP_CODE" = "200" ] && echo "Nginx OK" && exit 0
             sleep 3
           done
+
+          # Diagnostics si echec
           echo "=== Tasks app ==="
-          timeout 30 docker service ps my_app_app --no-trunc || echo "ps timeout"
+          timeout 15 docker service ps my_app_app --no-trunc 2>&1 || echo "timeout"
+          echo "=== Logs nginx (priorite) ==="
+          timeout 15 docker service logs --no-trunc --tail 50 my_app_nginx 2>&1 || echo "timeout"
           echo "=== Logs app ==="
-          timeout 30 docker service logs --no-trunc --tail 100 my_app_app 2>&1 || echo "logs app timeout"
-          echo "=== Logs nginx ==="
-          timeout 30 docker service logs --no-trunc --tail 50 my_app_nginx 2>&1 || echo "logs nginx timeout"
+          timeout 15 docker service logs --no-trunc --tail 100 my_app_app 2>&1 || echo "timeout"
           echo "=== Containers ==="
           docker ps -a
-          echo "=== rendered file ==="
-          ls -la rendered/ || true
-          cat rendered/app.env 2>/dev/null | head -1 | sed 's/=.*/=REDACTED/' || echo "no rendered file"
+          echo "=== Curl response body ==="
+          curl -v http://localhost 2>&1 | head -30 || true
           exit 1
 
       - name: Verifier aucun secret en env conteneur app
