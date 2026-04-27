@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -E \"openbao/role_id|openbao/secret_id|openbao/\\\\.token|^\\\\.env$|rendered/\")",
+      "Bash(python -c \"from secrets_manager import get_secret; print\\('module OK, fallback test:', get_secret\\('NONEXISTENT', 'fallback'\\)\\)\")",
+      "Bash(git ls-tree *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(git pull *)",
+      "Bash(docker compose *)",
+      "Bash(curl -sf http://localhost:8200/v1/sys/health)",
+      "Bash(break)",
+      "Bash(docker exec *)",
+      "Bash(docker logout *)",
+      "Bash(docker pull *)"
+    ]
+  }
+}

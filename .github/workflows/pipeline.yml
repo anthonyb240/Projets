@@ -120,7 +120,7 @@ jobs:
         run: pip install bandit
 
       - name: Lancement Bandit
-        run: bandit -r . -f json -o bandit-report.json --exclude ./.venv,./.git || true
+        run: bandit -r . -f json -o bandit-report.json --exclude ./.venv,./.git
 
       - name: Sauvegarde du rapport Bandit
         uses: actions/upload-artifact@v4
@@ -152,10 +152,10 @@ jobs:
         run: pip install semgrep
 
       - name: Scan Semgrep (regles par defaut)
-        run: semgrep scan --config auto --json --output semgrep-default-report.json . || true
+        run: semgrep scan --config auto --json --output semgrep-default-report.json .
 
       - name: Scan Semgrep (regles custom - policy as code)
-        run: semgrep scan --config .semgrep/custom-rules.yml --json --output semgrep-custom-report.json . || true
+        run: semgrep scan --config .semgrep/custom-rules.yml --json --output semgrep-custom-report.json .
 
       - name: Sauvegarde des rapports Semgrep
         uses: actions/upload-artifact@v4
@@ -284,7 +284,7 @@ jobs:
 
       - name: Initialisation Swarm pour le test DAST
         run: |
-          docker swarm init || true
+          docker swarm init
 
       - name: Demarrage de l'application via Docker Stack
         run: |
@@ -304,8 +304,8 @@ jobs:
           done
           docker service ps my_app_app --no-trunc
           if [ "$HTTP" != "200" ]; then
-            docker service logs --no-trunc --tail 50 my_app_nginx 2>&1 || true
-            docker service logs --no-trunc --tail 50 my_app_app 2>&1 || true
+            docker service logs --no-trunc --tail 50 my_app_nginx 2>&1
+            docker service logs --no-trunc --tail 50 my_app_app 2>&1
             exit 1
           fi
 
@@ -373,7 +373,7 @@ jobs:
               API_KEY="$APP_API_KEY" \
               DB_PASSWORD="$APP_DB_PASSWORD"
 
-          docker exec -e BAO_ADDR -e BAO_TOKEN openbao bao auth enable approle || true
+          docker exec -e BAO_ADDR -e BAO_TOKEN openbao bao auth enable approle
 
           docker exec -e BAO_ADDR -e BAO_TOKEN openbao sh -c '
             cat > /tmp/p.hcl <<EOF
@@ -421,7 +421,7 @@ jobs:
 
       - name: Init Swarm + deploy stack
         run: |
-          docker swarm init || true
+          docker swarm init
           # On definit l'image locale pour le stack
           export DOCKER_IMAGE=app-securisee:latest
           docker stack deploy -c docker-stack.yml my_app
@@ -442,7 +442,7 @@ jobs:
           for i in $(seq 1 30); do
             C=$(docker ps -q --filter "name=my_app_app" | head -1)
             if [ -n "$C" ]; then
-              CODE=$(docker exec $C python -c "import urllib.request; r=urllib.request.urlopen('http://localhost:5000', timeout=3); print(r.status)" 2>&1 || true)
+              CODE=$(docker exec $C python -c "import urllib.request; r=urllib.request.urlopen('http://localhost:5000', timeout=3); print(r.status)" 2>&1)
               echo "Tentative $i/30 direct: $CODE"
               if echo "$CODE" | grep -q "^200$"; then
                 echo "App repond direct sur 5000"
@@ -476,13 +476,13 @@ jobs:
           echo "=== Containers ==="
           docker ps -a
           echo "=== Curl response body ==="
-          curl -v http://localhost 2>&1 | head -30 || true
+          curl -v http://localhost 2>&1 | head -30
           exit 1
 
       - name: Verifier aucun secret en env conteneur app
         run: |
           C=$(docker ps -q --filter "name=my_app_app" | head -1)
-          LEAK=$(docker exec $C env | grep -E "^(SECRET_KEY|API_KEY|DB_PASSWORD)=" || true)
+          LEAK=$(docker exec $C env | grep -E "^(SECRET_KEY|API_KEY|DB_PASSWORD)=")
           if [ -n "$LEAK" ]; then echo "FAIL leak"; echo "$LEAK"; exit 1; fi
           echo "OK aucun secret en env"
 
@@ -536,7 +536,7 @@ jobs:
         run: |
           echo "=== openbao ==="; timeout 20 docker logs openbao --tail 50 2>&1 || echo "timeout"
           echo "=== bao-agent ==="; timeout 20 docker logs bao-agent --tail 50 2>&1 || echo "timeout"
-          echo "=== rendered/app.env ==="; ls -la rendered/ || true
+          echo "=== rendered/app.env ==="; ls -la rendered/
           echo "=== swarm services ==="; timeout 20 docker stack services my_app 2>&1 || echo "timeout"
           echo "=== app tasks ==="; timeout 20 docker service ps my_app_app --no-trunc 2>&1 || echo "timeout"
           echo "=== app logs ==="; timeout 20 docker service logs --no-trunc --tail 100 my_app_app 2>&1 || echo "timeout"
@@ -544,10 +544,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker stack rm my_app || true
+          docker stack rm my_app
           sleep 10
-          docker compose -f docker-compose.openbao.yml down -v || true
-          docker swarm leave --force || true
+          docker compose -f docker-compose.openbao.yml down -v
+          docker swarm leave --force
   # ============================================================
   # Lab 5 : Push Docker (Publication sur GHCR)
   # ============================================================
