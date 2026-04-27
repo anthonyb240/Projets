@@ -564,3 +564,37 @@ jobs:
             -t ghcr.io/${var_repo}:${{ github.sha }} .
           docker push ghcr.io/${var_repo}:latest
           docker push ghcr.io/${var_repo}:${{ github.sha }}
+
+  # ============================================================
+  # Lab 7 : Deploy local complet (stack Swarm + OpenBao + agent)
+  # ============================================================
+
+  swarm-deploy:
+    name: Local Swarm Deploy (OpenBao + Stack)
+    needs: docker-push
+    runs-on: self-hosted
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build image localement (evite pb auth GHCR)
+        shell: powershell
+        run: |
+          docker build -t app-securisee:latest -t "ghcr.io/anthonyb240/projets:latest" .
+
+      - name: Deploy stack + OpenBao + bootstrap
+        shell: powershell
+        env:
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          API_KEY: ${{ secrets.API_KEY }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+        run: |
+          $sk = if ($env:SECRET_KEY) { $env:SECRET_KEY } else { "deploy-fallback-flask-key-32chars-1234567890" }
+          $ak = if ($env:API_KEY)    { $env:API_KEY }    else { "deploy-fallback-api" }
+          $db = if ($env:DB_PASSWORD){ $env:DB_PASSWORD } else { "deploy-fallback-db" }
+          .\manage-swarm.ps1 -Action deploy -SecretKey $sk -ApiKey $ak -DbPassword $db
+
+      - name: Status final
+        if: always()
+        shell: powershell
+        run: .\manage-swarm.ps1 -Action status
