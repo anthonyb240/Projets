@@ -1,0 +1,26 @@
+# Infisical Agent config
+# Doc: https://infisical.com/docs/integrations/platforms/infisical-agent
+#
+# Auth: Universal Auth via env vars (cf compose).
+#   INFISICAL_UNIVERSAL_AUTH_CLIENT_ID
+#   INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET
+
+infisical:
+  address: http://infisical-backend:8080
+  exit-after-auth: false
+
+auth:
+  type: universal-auth
+  config:
+    remove_client_secret_on_read: false
+
+sinks:
+  - type: file
+    config:
+      path: /run/secrets-rendered/.vault-token
+
+templates:
+  - source-path: /etc/infisical/app.env.tmpl
+    destination-path: /run/secrets-rendered/app.env
+    config:
+      polling-interval: 10s
