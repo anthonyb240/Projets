@@ -330,7 +330,7 @@ jobs:
             -t ghcr.io/${var_repo}:${{ github.sha }} .
           docker push ghcr.io/${var_repo}:latest
           docker push ghcr.io/${var_repo}:${{ github.sha }}
-
+  # Test
   swarm-deploy:
     name: Local Swarm Deploy
     needs: docker-push
