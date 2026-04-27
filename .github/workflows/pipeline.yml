@@ -390,6 +390,7 @@ jobs:
           docker service ps my_app_app --no-trunc
 
       - name: Verifier app via Nginx
+        timeout-minutes: 5
         run: |
           for i in $(seq 1 60); do
             curl -sf http://localhost > /dev/null && echo "App OK" && exit 0
@@ -397,11 +398,16 @@ jobs:
             sleep 3
           done
           echo "=== Tasks app ==="
-          docker service ps my_app_app --no-trunc
+          timeout 30 docker service ps my_app_app --no-trunc || echo "ps timeout"
           echo "=== Logs app ==="
-          docker service logs my_app_app --tail 100
+          timeout 30 docker service logs --no-trunc --tail 100 my_app_app 2>&1 || echo "logs app timeout"
           echo "=== Logs nginx ==="
-          docker service logs my_app_nginx --tail 50
+          timeout 30 docker service logs --no-trunc --tail 50 my_app_nginx 2>&1 || echo "logs nginx timeout"
+          echo "=== Containers ==="
+          docker ps -a
+          echo "=== rendered file ==="
+          ls -la rendered/ || true
+          cat rendered/app.env 2>/dev/null | head -1 | sed 's/=.*/=REDACTED/' || echo "no rendered file"
           exit 1
 
       - name: Verifier aucun secret en env conteneur app
@@ -439,13 +445,14 @@ jobs:
 
       - name: Logs en cas d'echec
         if: failure()
+        timeout-minutes: 3
         run: |
-          echo "=== openbao ==="; docker logs openbao --tail 50 || true
-          echo "=== bao-agent ==="; docker logs bao-agent --tail 50 || true
-          echo "=== rendered/app.env existe? ==="; ls -la rendered/ || true
-          echo "=== swarm services ==="; docker stack services my_app || true
-          echo "=== app tasks ==="; docker service ps my_app_app --no-trunc || true
-          echo "=== app logs ==="; docker service logs my_app_app --tail 100 || true
+          echo "=== openbao ==="; timeout 20 docker logs openbao --tail 50 2>&1 || echo "timeout"
+          echo "=== bao-agent ==="; timeout 20 docker logs bao-agent --tail 50 2>&1 || echo "timeout"
+          echo "=== rendered/app.env ==="; ls -la rendered/ || true
+          echo "=== swarm services ==="; timeout 20 docker stack services my_app 2>&1 || echo "timeout"
+          echo "=== app tasks ==="; timeout 20 docker service ps my_app_app --no-trunc 2>&1 || echo "timeout"
+          echo "=== app logs ==="; timeout 20 docker service logs --no-trunc --tail 100 my_app_app 2>&1 || echo "timeout"
 
       - name: Cleanup
         if: always()
