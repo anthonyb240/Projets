@@ -35,28 +35,37 @@ function Bootstrap-OpenBao {
     param($SK, $AK, $DBP)
     Write-Host "Bootstrap OpenBao..." -ForegroundColor Yellow
 
-    # KV v2 deja monte en mode dev
-    docker exec -e BAO_ADDR=http://127.0.0.1:8200 -e BAO_TOKEN=root openbao `
-        bao kv put secret/forum/dev SECRET_KEY=$SK API_KEY=$AK DB_PASSWORD=$DBP | Out-Null
+    # Suppress PowerShell NativeCommandError sur docker stderr
+    $ErrorActionPreference = 'Continue'
+    $PSNativeCommandUseErrorActionPreference = $false
 
-    # Active AppRole (idempotent)
-    docker exec -e BAO_ADDR=http://127.0.0.1:8200 -e BAO_TOKEN=root openbao `
-        bao auth enable approle 2>$null
+    # KV v2 deja monte en mode dev
+    & docker exec -e BAO_ADDR=http://127.0.0.1:8200 -e BAO_TOKEN=root openbao `
+        bao kv put secret/forum/dev "SECRET_KEY=$SK" "API_KEY=$AK" "DB_PASSWORD=$DBP" 2>&1 | Out-Null
+
+    # Active AppRole (idempotent - ignore erreur si deja enabled)
+    & docker exec -e BAO_ADDR=http://127.0.0.1:8200 -e BAO_TOKEN=root openbao `
+        bao auth enable approle 2>&1 | Out-Null
 
     # Policy
     $policy = "path `"secret/data/forum/dev`" { capabilities = [`"read`"] }"
-    docker exec -e BAO_ADDR=http://127.0.0.1:8200 -e BAO_TOKEN=root openbao `
-        sh -c "echo '$policy' > /tmp/p.hcl && bao policy write forum-read /tmp/p.hcl" | Out-Null
+    & docker exec -e BAO_ADDR=http://127.0.0.1:8200 -e BAO_TOKEN=root openbao `
+        sh -c "echo '$policy' > /tmp/p.hcl && bao policy write forum-read /tmp/p.hcl" 2>&1 | Out-Null
 
     # Role
-    docker exec -e BAO_ADDR=http://127.0.0.1:8200 -e BAO_TOKEN=root openbao `
-        bao write auth/approle/role/forum token_policies=forum-read token_ttl=1h token_max_ttl=4h | Out-Null
+    & docker exec -e BAO_ADDR=http://127.0.0.1:8200 -e BAO_TOKEN=root openbao `
+        bao write auth/approle/role/forum token_policies=forum-read token_ttl=1h token_max_ttl=4h 2>&1 | Out-Null
 
     # Recupere creds
-    $roleId = docker exec -e BAO_ADDR=http://127.0.0.1:8200 -e BAO_TOKEN=root openbao `
-        bao read -field=role_id auth/approle/role/forum/role-id
-    $secretId = docker exec -e BAO_ADDR=http://127.0.0.1:8200 -e BAO_TOKEN=root openbao `
-        bao write -f -field=secret_id auth/approle/role/forum/secret-id
+    $roleId = & docker exec -e BAO_ADDR=http://127.0.0.1:8200 -e BAO_TOKEN=root openbao `
+        bao read -field=role_id auth/approle/role/forum/role-id 2>$null
+    $secretId = & docker exec -e BAO_ADDR=http://127.0.0.1:8200 -e BAO_TOKEN=root openbao `
+        bao write -f -field=secret_id auth/approle/role/forum/secret-id 2>$null
+
+    if (-not $roleId -or -not $secretId) {
+        Write-Error "Echec recuperation role_id/secret_id"
+        exit 1
+    }
 
     if (-not (Test-Path "openbao")) { New-Item -ItemType Directory -Path "openbao" | Out-Null }
     [System.IO.File]::WriteAllText((Resolve-Path "openbao").Path + "\role_id", $roleId)
