@@ -577,12 +577,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Login GHCR
-        shell: powershell
-        run: |
-          "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-
-      - name: Pull image GHCR
+      - name: Pull image GHCR (package public)
         shell: powershell
         run: |
           $repo = "${{ github.repository }}".ToLower()
