@@ -580,6 +580,8 @@ jobs:
       - name: Pull image GHCR (package public)
         shell: powershell
         run: |
+          # Vire creds cachees eventuelles
+          docker logout ghcr.io 2>$null
           $repo = "${{ github.repository }}".ToLower()
           docker pull "ghcr.io/${repo}:latest"
 
