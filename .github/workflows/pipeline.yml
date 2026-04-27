@@ -267,34 +267,47 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build image
+      - name: Build image (tag GHCR name attendu par stack)
         run: |
-          docker build \
-            --secret id=db_password,src=<(echo "ci_test_password") \
-            --secret id=api_key,src=<(echo "ci_test_api_key") \
-            -t app-securisee:latest .
+          docker build -t app-securisee:latest -t ghcr.io/anthonyb240/projets:latest .
+
+      - name: Prepare rendered/app.env (secrets factices pour DAST)
+        run: |
+          mkdir -p rendered
+          cat > rendered/app.env <<EOF
+          SECRET_KEY=dast-test-flask-key-32chars-1234567890
+          API_KEY=dast-test-api-key
+          DB_PASSWORD=dast-test-db-password
+          EOF
+          chmod -R 777 rendered
+          ls -la rendered/
 
       - name: Initialisation Swarm pour le test DAST
         run: |
           docker swarm init || true
-          echo "SECRET_KEY=ci-test-key-dast" | docker secret create app_secret_v1 - || true
 
       - name: Demarrage de l'application via Docker Stack
         run: |
-          # On force Swarm a utiliser l'image locale buildée juste au dessus
-          export DOCKER_IMAGE=app-securisee:latest
           docker stack deploy -c docker-stack.yml my_app
-          
+          docker stack services my_app
+
           echo "Attente du demarrage..."
           for i in $(seq 1 60); do
-            if curl -sf http://localhost > /dev/null 2>&1; then
+            REPLICAS=$(docker service ls --filter name=my_app_app --format "{{.Replicas}}")
+            HTTP=$(curl -s -o /dev/null -w "%{http_code}" --max-time 3 http://127.0.0.1 || echo "000")
+            echo "Tentative $i/60 replicas=$REPLICAS http=$HTTP"
+            if [ "$HTTP" = "200" ]; then
               echo "Stack pret"
               break
             fi
-            echo "Tentative $i/60..."
-            sleep 2
+            sleep 3
           done
-          docker service ps my_app
+          docker service ps my_app_app --no-trunc
+          if [ "$HTTP" != "200" ]; then
+            docker service logs --no-trunc --tail 50 my_app_nginx 2>&1 || true
+            docker service logs --no-trunc --tail 50 my_app_app 2>&1 || true
+            exit 1
+          fi
 
       - name: Scan DAST avec Wapiti
         run: |
@@ -302,7 +315,7 @@ jobs:
           docker run --rm --network host \
             -v "${{ github.workspace }}/reports:/reports" \
             cyberwatch/wapiti:latest \
-            -u http://localhost \
+            -u http://127.0.0.1 \
             -f html \
             -o /reports/wapiti-report.html \
             --flush-session \
