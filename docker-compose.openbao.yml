@@ -1,0 +1,21 @@
+services:
+  openbao:
+    image: openbao/openbao:latest
+    container_name: openbao
+    cap_add: [IPC_LOCK]
+    environment:
+      BAO_DEV_ROOT_TOKEN_ID: root
+      BAO_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+    ports:
+      - "8200:8200"
+
+  bao-agent:
+    image: openbao/openbao:latest
+    container_name: bao-agent
+    user: "0:0"
+    depends_on:
+      - openbao
+    volumes:
+      - ./openbao:/etc/openbao:ro
+      - ./rendered:/run/secrets-rendered
+    command: ["bao", "agent", "-config=/etc/openbao/agent.hcl"]

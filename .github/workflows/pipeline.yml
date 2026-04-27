@@ -295,6 +295,158 @@ jobs:
           docker service ps my_app_app --no-trunc
           docker service ps my_app_nginx --no-trunc
 
+  swarm-bao-integration:
+    name: Swarm + OpenBao end-to-end
+    runs-on: ubuntu-latest
+    needs: [docker-push]
+    if: github.ref == 'refs/heads/main' || github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Pull image from GHCR
+        run: |
+          REPO=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          docker pull ghcr.io/$REPO:latest
+          docker tag ghcr.io/$REPO:latest app-securisee:latest
+
+      - name: Demarrer OpenBao backend
+        run: |
+          docker compose -f docker-compose.openbao.yml up -d openbao
+          for i in $(seq 1 20); do
+            curl -sf http://localhost:8200/v1/sys/health > /dev/null && echo "OpenBao up" && exit 0
+            sleep 2
+          done
+          docker logs openbao; exit 1
+
+      - name: Bootstrap OpenBao depuis GitHub Secrets
+        env:
+          BAO_ADDR: http://127.0.0.1:8200
+          BAO_TOKEN: root
+          APP_SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          APP_API_KEY: ${{ secrets.API_KEY }}
+          APP_DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+        run: |
+          docker exec -e BAO_ADDR -e BAO_TOKEN openbao \
+            bao kv put secret/forum/dev \
+              SECRET_KEY="$APP_SECRET_KEY" \
+              API_KEY="$APP_API_KEY" \
+              DB_PASSWORD="$APP_DB_PASSWORD"
+
+          docker exec -e BAO_ADDR -e BAO_TOKEN openbao bao auth enable approle || true
+
+          docker exec -e BAO_ADDR -e BAO_TOKEN openbao sh -c '
+            cat > /tmp/p.hcl <<EOF
+          path "secret/data/forum/dev" {
+            capabilities = ["read"]
+          }
+          EOF
+            bao policy write forum-read /tmp/p.hcl'
+
+          docker exec -e BAO_ADDR -e BAO_TOKEN openbao \
+            bao write auth/approle/role/forum \
+              token_policies=forum-read token_ttl=1h token_max_ttl=4h
+
+          ROLE_ID=$(docker exec -e BAO_ADDR -e BAO_TOKEN openbao \
+            bao read -field=role_id auth/approle/role/forum/role-id)
+          SECRET_ID=$(docker exec -e BAO_ADDR -e BAO_TOKEN openbao \
+            bao write -f -field=secret_id auth/approle/role/forum/secret-id)
+
+          mkdir -p openbao rendered
+          printf "%s" "$ROLE_ID" > openbao/role_id
+          printf "%s" "$SECRET_ID" > openbao/secret_id
+          chmod -R 777 rendered
+
+      - name: Demarrer bao-agent
+        run: |
+          docker compose -f docker-compose.openbao.yml up -d bao-agent
+          for i in $(seq 1 20); do
+            if [ -s rendered/app.env ]; then
+              echo "Fichier rendu OK"
+              exit 0
+            fi
+            echo "Attente render $i/20"
+            sleep 2
+          done
+          docker logs bao-agent; exit 1
+
+      - name: Verifier fichier rendu (sans logger valeurs)
+        run: |
+          test -s rendered/app.env
+          LINES=$(grep -c "=" rendered/app.env)
+          echo "$LINES secrets rendus"
+          [ "$LINES" -ge 3 ] || exit 1
+
+      - name: Init Swarm + deploy stack
+        run: |
+          docker swarm init || true
+          docker stack deploy -c docker-stack.yml my_app
+
+          for i in $(seq 1 60); do
+            REPLICAS=$(docker service ls --filter name=my_app_app --format "{{.Replicas}}")
+            echo "Tentative $i/60: replicas=$REPLICAS"
+            [ "$REPLICAS" = "2/2" ] && echo "Stack up" && break
+            sleep 5
+          done
+          docker service ps my_app_app --no-trunc
+
+      - name: Verifier app via Nginx
+        run: |
+          for i in $(seq 1 30); do
+            curl -sf http://localhost > /dev/null && echo "App OK" && exit 0
+            sleep 2
+          done
+          docker service logs my_app_app --tail 50; exit 1
+
+      - name: Verifier aucun secret en env conteneur app
+        run: |
+          C=$(docker ps -q --filter "name=my_app_app" | head -1)
+          LEAK=$(docker exec $C env | grep -E "^(SECRET_KEY|API_KEY|DB_PASSWORD)=" || true)
+          if [ -n "$LEAK" ]; then echo "FAIL leak"; echo "$LEAK"; exit 1; fi
+          echo "OK aucun secret en env"
+
+      - name: Verifier app lit via Bao
+        run: |
+          C=$(docker ps -q --filter "name=my_app_app" | head -1)
+          docker exec $C python -c "from secrets_manager import get_secret; assert get_secret('API_KEY'), 'API_KEY vide'; print('OK secrets lus')"
+
+      - name: Test rotation Bao sans restart Swarm
+        env:
+          BAO_ADDR: http://127.0.0.1:8200
+          BAO_TOKEN: root
+        run: |
+          NEW="ROTATED_$(date +%s)"
+          docker exec -e BAO_ADDR -e BAO_TOKEN openbao \
+            bao kv put secret/forum/dev \
+              SECRET_KEY="${{ secrets.SECRET_KEY }}" \
+              API_KEY="$NEW" \
+              DB_PASSWORD="${{ secrets.DB_PASSWORD }}"
+
+          # Agent re-render (10s polling) + TTL loader (15s)
+          sleep 25
+
+          C=$(docker ps -q --filter "name=my_app_app" | head -1)
+          READ=$(docker exec $C python -c "from secrets_manager import get_secret; print(get_secret('API_KEY'))")
+          echo "Lu apres rotation: $READ"
+          [ "$READ" = "$NEW" ] || (echo "FAIL rotation"; exit 1)
+          echo "OK rotation Bao -> Swarm sans restart"
+
+      - name: Logs en cas d'echec
+        if: failure()
+        run: |
+          echo "=== openbao ==="; docker logs openbao --tail 50 || true
+          echo "=== bao-agent ==="; docker logs bao-agent --tail 50 || true
+          echo "=== rendered/app.env existe? ==="; ls -la rendered/ || true
+          echo "=== swarm services ==="; docker stack services my_app || true
+          echo "=== app tasks ==="; docker service ps my_app_app --no-trunc || true
+          echo "=== app logs ==="; docker service logs my_app_app --tail 100 || true
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker stack rm my_app || true
+          sleep 10
+          docker compose -f docker-compose.openbao.yml down -v || true
+          docker swarm leave --force || true
   # ============================================================
   # Lab 5 : Push Docker (Publication sur GHCR)
   # ============================================================

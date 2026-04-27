@@ -2,15 +2,15 @@ version: '3.8'
 
 services:
   app:
-    # Utilise l'image du registre avec un tag variable pour forcer le Rolling Update
-    image: ${DOCKER_IMAGE:-ghcr.io/anthonyb240/projets:latest}
+    image: ghcr.io/anthonyb240/projets:latest
     networks:
       - frontend
     environment:
-      # On peut toujours utiliser des variables d'env pour les configs non sensibles
       SQLALCHEMY_DATABASE_URI: sqlite:///forum.db
-      # On indique au secrets_manager de chercher dans le dossier des secrets Swarm
-      SECRETS_FILE: /run/secrets/app_secret
+      SECRETS_FILE: /run/secrets-rendered/app.env
+      SECRETS_TTL: "15"
+    volumes:
+      - ./rendered:/run/secrets-rendered:ro
     deploy:
       replicas: 2
       update_config:
@@ -23,9 +23,6 @@ services:
         order: stop-first
       restart_policy:
         condition: on-failure
-    secrets:
-      - source: app_secret_v1
-        target: app_secret
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000')"]
       interval: 10s
@@ -50,7 +47,3 @@ services:
 networks:
   frontend:
     driver: overlay
-
-secrets:
-  app_secret_v1:
-    external: true
