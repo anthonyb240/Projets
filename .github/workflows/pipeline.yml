@@ -490,13 +490,31 @@ jobs:
               API_KEY="$NEW" \
               DB_PASSWORD="${{ secrets.DB_PASSWORD }}"
 
-          # Agent re-render (10s polling) + TTL loader (15s)
-          sleep 25
-
+          # Agent static_secret_render_interval=5s + TTL loader 15s
+          # On laisse 30s + retry pour etre safe
           C=$(docker ps -q --filter "name=my_app_app" | head -1)
-          READ=$(docker exec $C python -c "from secrets_manager import get_secret; print(get_secret('API_KEY'))")
-          echo "Lu apres rotation: $READ"
-          [ "$READ" = "$NEW" ] || (echo "FAIL rotation"; exit 1)
+          for i in $(seq 1 12); do
+            sleep 5
+            # Verifie d'abord que le fichier rendu a la nouvelle valeur (cote agent)
+            if grep -q "API_KEY=$NEW" rendered/app.env; then
+              echo "Fichier rendu a jour ($i*5s)"
+              break
+            fi
+            echo "Attente render $i/12..."
+          done
+
+          # Puis attend que loader Python recharge (TTL 15s)
+          for i in $(seq 1 6); do
+            READ=$(docker exec $C python -c "from secrets_manager import get_secret; print(get_secret('API_KEY'))")
+            echo "Tentative $i: lu='$READ'"
+            [ "$READ" = "$NEW" ] && echo "OK rotation propagee" && exit 0
+            sleep 5
+          done
+
+          echo "FAIL rotation"
+          echo "=== Fichier rendu ==="; cat rendered/app.env | sed 's/=.*/=REDACTED/'
+          echo "=== Logs agent ==="; docker logs bao-agent --tail 30
+          exit 1
           echo "OK rotation Bao -> Swarm sans restart"
 
       - name: Logs en cas d'echec

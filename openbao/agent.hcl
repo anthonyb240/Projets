@@ -4,6 +4,12 @@ vault {
   address = "http://openbao:8200"
 }
 
+# Force re-render des secrets statiques toutes les 5s
+# (default 5m -> trop lent pour rotation demo)
+template_config {
+  static_secret_render_interval = "5s"
+}
+
 auto_auth {
   method "approle" {
     config = {
