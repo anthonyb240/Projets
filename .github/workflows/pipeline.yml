@@ -574,6 +574,13 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Login GHCR
+        shell: powershell
+        run: |
+          $token = "${{ secrets.TOKEN }}"
+          if (-not $token) { $token = "${{ secrets.GITHUB_TOKEN }}" }
+          $token | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
       - name: Pull image GHCR
         shell: powershell
         run: |
