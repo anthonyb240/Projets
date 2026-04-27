@@ -1,2 +1,3 @@
 "5b566e34-8c68-fc53-054e-2b2f8f807a74" | Out-File -Encoding ascii -NoNewline openbao\role_id
 "843a451f-d4e0-8f6f-fd81-8feace3bfc59" | Out-File -Encoding ascii -NoNewline openbao\secret_id
+#test
