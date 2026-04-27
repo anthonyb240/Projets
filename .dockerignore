@@ -9,3 +9,5 @@ instance/
 payload.jpg
 generate_payload.py
 secrets/
+rendered/
+openbao/
