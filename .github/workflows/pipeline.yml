@@ -302,11 +302,12 @@ jobs:
         run: docker stack rm my_app
 
   # ============================================================
-  # Lab 5 : Push Docker + Local Swarm Deploy (via Self-Hosted Runner)
+  # Lab 5 : Push Docker (Publication sur GHCR)
   # ============================================================
 
   docker-push:
-    name: Deploy - Push GHCR
+    name: Build & Push GHCR
+    needs: [dast-wapiti]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -316,7 +317,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Login to GHCR
-        run: echo "${{ secrets.TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
       - name: Build et Push
         run: |
@@ -328,19 +329,4 @@ jobs:
             -t ghcr.io/${var_repo}:latest \
             -t ghcr.io/${var_repo}:${{ github.sha }} .
           docker push ghcr.io/${var_repo}:latest
-          docker push ghcr.io/${var_repo}:${{ github.sha }}
-
-  swarm-deploy:
-    name: Local Swarm Deploy
-    needs: docker-push
-    # CE JOB S'EXÉCUTE SUR VOTRE MACHINE LOCALE
-    runs-on: self-hosted
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Deploy to Local Swarm
-        shell: powershell
-        run: |
-          # Utilisation du script local pour mettre à jour le stack
-          .\manage-swarm.ps1 -Action deploy
+          docker push ghcr.io/${var_repo}:${{ github.sha }}
