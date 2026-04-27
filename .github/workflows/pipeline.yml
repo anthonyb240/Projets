@@ -261,31 +261,29 @@ jobs:
   # ============================================================
 
   dast-wapiti:
-    name: DAST - Wapiti (via docker-compose)
+    name: DAST - Wapiti (Simulation Swarm)
     runs-on: ubuntu-latest
-    environment: render_api
     needs: [docker-build-scan]
     steps:
       - uses: actions/checkout@v4
 
-      - name: Demarrage de l'application via docker-compose
-        env:
-          CTF_FLAG: "FLAG{ci_test_dast}"
-          DB_PASSWORD: "ci_test_password"
-          API_KEY: "ci_test_api_key"
-          SECRET_KEY: "ci-test-secret-key-for-dast"
+      - name: Initialisation Swarm pour le test DAST
         run: |
-          docker compose up -d --build
-          echo "Attente du demarrage de l'application..."
-          for i in $(seq 1 30); do
-            if curl -s http://localhost:5000 > /dev/null 2>&1; then
-              echo "Serveur pret !"
+          docker swarm init || true
+          # Creation d'un secret fictif pour le test
+          echo "SECRET_KEY=ci-test-key-dast" | docker secret create app_secret_v1 - || true
+
+      - name: Demarrage de l'application via Docker Stack
+        run: |
+          docker stack deploy -c docker-stack.yml my_app
+          echo "Attente du demarrage..."
+          for i in $(seq 1 60); do
+            if curl -s http://localhost > /dev/null 2>&1; then
+              echo "Stack Swarm pret !"
               break
             fi
-            echo "Tentative $i/30..."
             sleep 2
           done
-          docker compose ps
 
       - name: Scan DAST avec Wapiti
         run: |
@@ -293,30 +291,23 @@ jobs:
           docker run --rm --network host \
             -v "${{ github.workspace }}/reports:/reports" \
             cyberwatch/wapiti:latest \
-            -u http://localhost:5000 \
+            -u http://localhost \
             -f html \
             -o /reports/wapiti-report.html \
             --flush-session \
             --scope folder
 
-      - name: Arret des conteneurs
+      - name: Arret du stack
         if: always()
-        run: docker compose down -v
-
-      - name: Sauvegarde du rapport Wapiti
-        uses: actions/upload-artifact@v4
-        with:
-          name: wapiti-report
-          path: reports/
+        run: docker stack rm my_app
 
   # ============================================================
-  # Lab 5 : Push Docker + Deploy Render + Health Check & Rollback
+  # Lab 5 : Push Docker + Local Swarm Deploy (via Self-Hosted Runner)
   # ============================================================
 
   docker-push:
     name: Deploy - Push GHCR
     runs-on: ubuntu-latest
-    environment: render_api
     permissions:
       contents: read
       packages: write
@@ -335,114 +326,21 @@ jobs:
             --secret id=db_password,src=<(echo "${{ secrets.DB_PASSWORD }}") \
             --secret id=api_key,src=<(echo "${{ secrets.API_KEY }}") \
             -t ghcr.io/${var_repo}:latest \
-            -t ghcr.io/${var_repo}:${{ github.sha }} \
-            -t ghcr.io/${var_repo}:dev .
+            -t ghcr.io/${var_repo}:${{ github.sha }} .
           docker push ghcr.io/${var_repo}:latest
           docker push ghcr.io/${var_repo}:${{ github.sha }}
-          docker push ghcr.io/${var_repo}:dev
 
-  render-deploy:
-    name: Deploy to Render
+  swarm-deploy:
+    name: Local Swarm Deploy
     needs: docker-push
-    runs-on: ubuntu-latest
-    environment: render_api
+    # CE JOB S'EXÉCUTE SUR VOTRE MACHINE LOCALE
+    runs-on: self-hosted
     steps:
-      - name: Trigger deploy
-        run: |
-          curl -s -w "\nHTTP Status: %{http_code}\n" \
-            -X POST "https://api.render.com/v1/services/${{ secrets.RENDER_SERVICE }}/deploys" \
-            -H "Authorization: Bearer ${{ secrets.RENDER_KEY }}" \
-            -H "Content-Type: application/json"
-
-  health-check:
-    name: Verify & Rollback if needed
-    needs: render-deploy
-    runs-on: ubuntu-latest
-    environment: render_api
-    steps:
-      - name: Checkout
+      - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 2
 
-      - name: Wait for deploy to stabilize
+      - name: Deploy to Local Swarm
+        shell: powershell
         run: |
-          echo "Waiting 90s for Render deploy to stabilize..."
-          sleep 90
-
-      - name: Check deploy status
-        id: check
-        run: |
-          response=$(curl -s \
-            "https://api.render.com/v1/services/${{ secrets.RENDER_SERVICE }}/deploys?limit=5" \
-            -H "Authorization: Bearer ${{ secrets.RENDER_KEY }}")
-
-          current_status=$(echo "$response" | jq -r '.[0].status')
-          current_id=$(echo "$response" | jq -r '.[0].id')
-
-          echo "Current deploy ID: $current_id"
-          echo "Current deploy status: $current_status"
-
-          # Cherche le dernier deploy "live" different du courant
-          previous_live_id=$(echo "$response" | jq -r --arg cid "$current_id" \
-            '[.[] | select(.status == "live" and .id != $cid)] | .[0].id // empty')
-
-          echo "Previous live deploy ID: $previous_live_id"
-
-          if [ "$current_status" = "live" ]; then
-            echo "Deploy is live"
-            echo "rollback=false" >> $GITHUB_OUTPUT
-          elif [ -n "$previous_live_id" ]; then
-            echo "Deploy failed (status: $current_status) - rollback possible"
-            echo "rollback=true" >> $GITHUB_OUTPUT
-            echo "previous_sha=$previous_live_id" >> $GITHUB_OUTPUT
-          else
-            echo "Deploy failed but no previous live deploy to rollback to"
-            echo "rollback=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Health check
-        id: health
-        run: |
-          status_code=$(curl -s -o /dev/null -w "%{http_code}" \
-            "https://projets-2oho.onrender.com/health" \
-            --max-time 15)
-
-          echo "Health check HTTP status: $status_code"
-
-          if [ "$status_code" -eq 200 ]; then
-            echo "App is healthy"
-            echo "healthy=true" >> $GITHUB_OUTPUT
-          else
-            echo "App is unhealthy (HTTP $status_code)"
-            echo "healthy=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Rollback via image SHA
-        if: steps.check.outputs.rollback == 'true' || steps.health.outputs.rollback == 'false'
-        run: |
-          # Recupere le SHA du commit precedent
-          PREV_SHA=$(git rev-parse HEAD~1)
-          var_repo=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
-          ROLLBACK_IMAGE="ghcr.io/${var_repo}:${PREV_SHA}"
-
-          echo "Current commit: ${{ github.sha }}"
-          echo "Rolling back to image: $ROLLBACK_IMAGE"
-
-          # Verifie que l'image existe
-          if docker manifest inspect "$ROLLBACK_IMAGE" > /dev/null 2>&1; then
-            echo "Image found, triggering rollback deploy on Render..."
-
-            curl -s -w "\nHTTP Status: %{http_code}\n" \
-              -X POST "https://api.render.com/v1/services/${{ secrets.RENDER_SERVICE }}/deploys" \
-              -H "Authorization: Bearer ${{ secrets.RENDER_KEY }}" \
-              -H "Content-Type: application/json" \
-              -d "{\"imageUrl\": \"${ROLLBACK_IMAGE}\"}"
-
-            echo "Rollback triggered to $ROLLBACK_IMAGE"
-          else
-            echo "WARNING: Previous image $ROLLBACK_IMAGE not found in registry"
-            echo "Cannot rollback - no previous image available"
-          fi
-
-          exit 1
+          # Utilisation du script local pour mettre à jour le stack
+          .\manage-swarm.ps1 -Action deploy
