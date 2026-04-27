@@ -426,3 +426,8 @@ docker compose up --build
 - **Conteneurisation** : Docker + docker-compose
 - **CI/CD** : GitHub Actions
 - **Securite** : Gitleaks, TruffleHog, Flake8, Bandit, Semgrep, pip-audit, Trivy, Wapiti
+
+
+## Difficulté deploiement 
+
+- Lint flake8 : config.py pb de syntaxe ( espace ect)
