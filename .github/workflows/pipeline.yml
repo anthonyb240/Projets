@@ -439,10 +439,15 @@ jobs:
             sleep 2
           done
 
-          # 2. Test via Nginx
-          echo "=== Test via Nginx localhost:80 ==="
+          # 2. Diagnostic listener port 80
+          echo "=== Listener port 80 ==="
+          ss -tlnp 2>&1 | grep -E ":80\b" || echo "Pas de listener port 80"
+          docker network ls
+
+          # 3. Test via Nginx (force IPv4 + verbose en cas d'echec)
+          echo "=== Test via Nginx 127.0.0.1:80 ==="
           for i in $(seq 1 30); do
-            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost || echo "000")
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 http://127.0.0.1:80 || echo "000")
             echo "Tentative $i/30 nginx: HTTP $HTTP_CODE"
             [ "$HTTP_CODE" = "200" ] && echo "Nginx OK" && exit 0
             sleep 3
