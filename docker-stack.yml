@@ -43,6 +43,23 @@ services:
       placement:
         constraints:
           - node.role == manager
+  
+  uptime-kuma:
+    image: louislam/uptime-kuma:2
+    ports:
+      - "3001:3001"
+    networks:
+      - frontend
+    volumes:
+      - uptime-kuma:/app/data
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+
+volumes:
+  uptime-kuma:
 
 networks:
   frontend:
