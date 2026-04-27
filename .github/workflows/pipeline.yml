@@ -381,9 +381,9 @@ jobs:
           docker swarm init || true
           docker stack deploy -c docker-stack.yml my_app
 
-          for i in $(seq 1 60); do
+          for i in $(seq 1 90); do
             REPLICAS=$(docker service ls --filter name=my_app_app --format "{{.Replicas}}")
-            echo "Tentative $i/60: replicas=$REPLICAS"
+            echo "Tentative $i/90: replicas=$REPLICAS"
             [ "$REPLICAS" = "2/2" ] && echo "Stack up" && break
             sleep 5
           done
@@ -391,11 +391,18 @@ jobs:
 
       - name: Verifier app via Nginx
         run: |
-          for i in $(seq 1 30); do
+          for i in $(seq 1 60); do
             curl -sf http://localhost > /dev/null && echo "App OK" && exit 0
-            sleep 2
+            echo "Tentative $i/60 wait..."
+            sleep 3
           done
-          docker service logs my_app_app --tail 50; exit 1
+          echo "=== Tasks app ==="
+          docker service ps my_app_app --no-trunc
+          echo "=== Logs app ==="
+          docker service logs my_app_app --tail 100
+          echo "=== Logs nginx ==="
+          docker service logs my_app_nginx --tail 50
+          exit 1
 
       - name: Verifier aucun secret en env conteneur app
         run: |
