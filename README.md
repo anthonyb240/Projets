@@ -215,7 +215,7 @@ Avec `exit-code: '1'` et `severity: HIGH,CRITICAL`, Trivy faisait echouer l'ense
 Tous les jobs tournaient sur chaque push (meme les modifications de README). Aucune dependance conditionnelle, **gaspillage de minutes CI/CD**. [👉 Voir le correctif](#correctif-4--cicd-intelligente-lab-5)
 
 #### Erreur 5 : Docker build echoue a cause des BuildKit secrets
-Le `Dockerfile` utilise `--mount=type=secret,id=ctf_flag` et plusieurs autres secrets. Sans passer ces secrets au `docker build` dans le CI, le build echouait immediatement avec une erreur cryptique. [👉 Voir le correctif](#correctif-5--gestion-des-buildkit-secrets-en-ci)
+Le `Dockerfile` utilise `--mount=type=secret,id=db_password` et `id=api_key`. Sans passer ces secrets au `docker build` dans le CI, le build echouait immediatement avec une erreur cryptique. [👉 Voir le correctif](#correctif-5--gestion-des-buildkit-secrets-en-ci)
 
 #### Erreur 6 : Gitleaks detectait de faux positifs
 Le fichier `gitleaks.toml` contenait une regle custom qui matchait trop de choses, bloquant la pipeline sur des chaines legitimes (noms de variables, exemples dans les commentaires). [👉 Voir le correctif](#correctif-6--regle-gitleaks-affinee)
@@ -260,12 +260,11 @@ Les jobs `lint`, `sast-bandit`, `sast-semgrep` et `sca` utilisent `if: needs.cha
 Les secrets sont injectes via process substitution dans le job `docker-build-scan` :
 ```yaml
 docker build \
-  --secret id=ctf_flag,src=<(echo "FLAG{test_ci_cd}") \
   --secret id=db_password,src=<(echo "ci_test_password") \
   --secret id=api_key,src=<(echo "ci_test_api_key") \
   -t app-securisee:${{ github.sha }} .
 ```
-En production (`docker-push`), ces valeurs sont tirees des vrais secrets GitHub (`${{ secrets.CTF_FLAG }}`, etc.).
+En production (`docker-push`), ces valeurs sont tirees des vrais secrets GitHub (`${{ secrets.DB_PASSWORD }}`, `${{ secrets.API_KEY }}`).
 
 #### Correctif 6 : Regle Gitleaks affinee
 La regle custom dans `gitleaks.toml` a ete recentree sur le pattern strict :
@@ -292,7 +291,6 @@ A configurer dans **Settings > Secrets and variables > Actions** :
 |--------|-------------|
 | `DOCKERHUB_USERNAME` | Nom d'utilisateur DockerHub |
 | `DOCKERHUB_TOKEN` | Token d'acces DockerHub |
-| `CTF_FLAG` | Flag CTF pour le build Docker |
 | `DB_PASSWORD` | Mot de passe DB pour le build Docker |
 | `API_KEY` | Cle API pour le build Docker |
 
@@ -313,7 +311,6 @@ python app.py
 
 Ou via docker-compose :
 ```bash
-export CTF_FLAG="FLAG{dev}"
 export DB_PASSWORD="dev_password"
 export API_KEY="dev_api_key"
 docker compose up --build

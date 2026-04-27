@@ -236,7 +236,6 @@ jobs:
       - name: Build de l'image Docker
         run: |
           docker build \
-            --secret id=ctf_flag,src=<(echo "FLAG{test_ci_cd}") \
             --secret id=db_password,src=<(echo "ci_test_password") \
             --secret id=api_key,src=<(echo "ci_test_api_key") \
             -t app-securisee:${{ github.sha }} .
@@ -270,7 +269,6 @@ jobs:
 
       - name: Demarrage de l'application via docker-compose
         env:
-          CTF_FLAG: "FLAG{ci_test_dast}"
           DB_PASSWORD: "ci_test_password"
           API_KEY: "ci_test_api_key"
           SECRET_KEY: "ci-test-secret-key-for-dast"
@@ -331,7 +329,6 @@ jobs:
         run: |
           var_repo=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
           docker build \
-            --secret id=ctf_flag,src=<(echo "${{ secrets.CTF_FLAG }}") \
             --secret id=db_password,src=<(echo "${{ secrets.DB_PASSWORD }}") \
             --secret id=api_key,src=<(echo "${{ secrets.API_KEY }}") \
             -t ghcr.io/${var_repo}:latest \

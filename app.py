@@ -42,7 +42,6 @@ csp = {
 }
 talisman = Talisman(app, content_security_policy=csp, force_https=False)
 
-mdp = "vc_ABCDEFABCDEF"
 csrf = CSRFProtect(app)
 db.init_app(app)
 

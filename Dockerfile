@@ -7,19 +7,6 @@ RUN groupadd --gid 1000 appgroup && \
 
 WORKDIR /app
 
-# Installation de PHP-CGI + outils systeme (CTF)
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-        php-cgi \
-        bash \
-        coreutils \
-        net-tools \
-        curl \
-        procps \
-        ncat \
-        iputils-ping \
-    && apt-get clean && rm -rf /var/lib/apt/lists/*
-
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
