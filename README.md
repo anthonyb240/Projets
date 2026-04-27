@@ -223,6 +223,9 @@ Le fichier `gitleaks.toml` contenait une regle custom qui matchait trop de chose
 #### Erreur 7 : DockerHub push tentait de tourner sur `dev`
 Le job `docker-push` essayait de se connecter a DockerHub sur chaque push de branche `dev`, alors que les secrets DockerHub ne sont supposes etre utilises qu'en production (`main`). [👉 Voir le correctif](#correctif-7--docker-push-conditionne-a-main)
 
+##### Erreur 8 : Gérer Docker Swarm automatiquement
+Etant donnné le contexte du projet nous avons été contraint de ne plus utiliser Render. En effet le free tier de Render ne permet plus l'accès SSH ni le déploiement via Docker Swarm. L'implémentation d'un Worker avec une VM était également trop compliqué avec le peu de temps qu'il nous restait.
+
 ### 3.3 Correctifs apportes
 
 #### Correctif 1 : Semgrep re-active et isole
@@ -318,6 +321,8 @@ export DB_PASSWORD="dev_password"
 export API_KEY="dev_api_key"
 docker compose up --build
 ```
+##### Correction 8
+Nous avons mis en place un self-hosted runner GitHub Actions sur notre machine locale. Cela permet à la pipeline de piloter Swarm automatiquement à chaque git push. Nous avons du installer un agent github puis configurer le pipeline.yml afin de piloter Docker Swarm.
 
 ## Stack technique
 
