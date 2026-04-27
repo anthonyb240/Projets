@@ -47,14 +47,19 @@ function Bootstrap-OpenBao {
     & docker exec -e BAO_ADDR=http://127.0.0.1:8200 -e BAO_TOKEN=root openbao `
         bao auth enable approle 2>&1 | Out-Null
 
-    # Policy
-    $policy = "path `"secret/data/forum/dev`" { capabilities = [`"read`"] }"
-    & docker exec -e BAO_ADDR=http://127.0.0.1:8200 -e BAO_TOKEN=root openbao `
-        sh -c "echo '$policy' > /tmp/p.hcl && bao policy write forum-read /tmp/p.hcl" 2>&1 | Out-Null
+    # Policy - ecris fichier puis copie dans conteneur (evite hell d'escape PowerShell -> sh)
+    $policyPath = Join-Path (Get-Location) "openbao\forum-read.hcl"
+    $utf8NoBomPol = New-Object System.Text.UTF8Encoding $false
+    [System.IO.File]::WriteAllText($policyPath, 'path "secret/data/forum/dev" { capabilities = ["read"] }', $utf8NoBomPol)
+    & docker cp $policyPath openbao:/tmp/p.hcl 2>&1 | Out-Null
+    $policyOut = & docker exec -e BAO_ADDR=http://127.0.0.1:8200 -e BAO_TOKEN=root openbao `
+        bao policy write forum-read /tmp/p.hcl 2>&1
+    Write-Host "Policy result: $policyOut"
 
     # Role
-    & docker exec -e BAO_ADDR=http://127.0.0.1:8200 -e BAO_TOKEN=root openbao `
-        bao write auth/approle/role/forum token_policies=forum-read token_ttl=1h token_max_ttl=4h 2>&1 | Out-Null
+    $roleOut = & docker exec -e BAO_ADDR=http://127.0.0.1:8200 -e BAO_TOKEN=root openbao `
+        bao write auth/approle/role/forum token_policies=forum-read token_ttl=1h token_max_ttl=4h 2>&1
+    Write-Host "Role result: $roleOut"
 
     # Recupere creds
     $roleId = & docker exec -e BAO_ADDR=http://127.0.0.1:8200 -e BAO_TOKEN=root openbao `
