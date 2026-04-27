@@ -5,3 +5,6 @@ __pycache__/
 *.db
 static/aatvl5xf/
 rendered/
+openbao/role_id
+openbao/secret_id
+openbao/.token
