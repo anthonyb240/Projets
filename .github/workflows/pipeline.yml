@@ -329,4 +329,19 @@ jobs:
             -t ghcr.io/${var_repo}:latest \
             -t ghcr.io/${var_repo}:${{ github.sha }} .
           docker push ghcr.io/${var_repo}:latest
-          docker push ghcr.io/${var_repo}:${{ github.sha }}
+          docker push ghcr.io/${var_repo}:${{ github.sha }}
+
+  swarm-deploy:
+    name: Local Swarm Deploy
+    needs: docker-push
+    # CE JOB S'EXÉCUTE SUR VOTRE MACHINE LOCALE
+    runs-on: self-hosted
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to Local Swarm
+        shell: powershell
+        run: |
+          # Utilisation du script local pour mettre à jour le stack
+          .\manage-swarm.ps1 -Action deploy
