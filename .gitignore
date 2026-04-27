@@ -6,3 +6,15 @@ __pycache__/
 static/aatvl5xf/
 openbao/role_id
 openbao/secret_idrendered/
+.env
+.env.*
+!.env.example
+openbao/role_id
+openbao/secret_id
+openbao/.token
+rendered/
+secrets/
+*.pem
+*.key
+*.p12
+*.pfx
