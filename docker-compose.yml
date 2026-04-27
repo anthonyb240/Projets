@@ -38,6 +38,8 @@ services:
       - "3001:3001"
     volumes:
       - uptime-kuma:/app/data
+    networks:
+      - default 
 
 volumes:
   uptime-kuma:
