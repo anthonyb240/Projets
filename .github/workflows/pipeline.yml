@@ -595,6 +595,10 @@ jobs:
           API_KEY: ${{ secrets.API_KEY }}
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
         run: |
+          $owner = "${{ github.repository_owner }}".ToLower()
+          $name = "${{ github.event.repository.name }}".ToLower()
+          $env:DOCKER_IMAGE = "ghcr.io/$owner/$name:${{ github.sha }}"
+
           $sk = if ($env:SECRET_KEY) { $env:SECRET_KEY } else { "ci-fallback-flask-key-32chars-1234567890" }
           $ak = if ($env:API_KEY)    { $env:API_KEY }    else { "ci-fallback-api" }
           $db = if ($env:DB_PASSWORD){ $env:DB_PASSWORD } else { "ci-fallback-db" }
