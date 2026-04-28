@@ -344,6 +344,118 @@ Render a été utilisé dans un premier temps pour héberger l'application. Cepe
 
 ---
 
+### Lab 3 – Healthcheck & Monitoring 
+
+**Objectif** : Monitorer notre app
+
+**Obligatoire — Insérer un /health :**
+
+Nous avons rajouté une route /health `app.py` afin de check l'état de notre site
+
+```python
+@app.route('/health')
+def health():
+    return jsonify({
+        "status": "ok" if not errors else "unhealthy",
+    }), 200
+```
+
+**Bonus — Améliorer votre endpoint pour retourner les infos sur l'état de l'app :**
+
+
+```python
+@app.route('/health')
+def health():
+    logger.info('Health check called')
+    uptime = round(time.time() - START_TIME, 2)
+    errors = []
+
+    # Check DB
+    try:
+        db.session.execute(db.text('SELECT 1'))
+    except Exception as e:
+        errors.append(f"database: {str(e)}")
+
+    # Check fichiers critiques / config (via secrets_manager)
+    from secrets_manager import get_secret
+    if not get_secret("SECRET_KEY"):
+        errors.append("missing SECRET_KEY")
+
+    status_code = 200 if not errors else 400
+
+    return jsonify({
+        "status": "ok" if not errors else "unhealthy",
+        "errors": errors,
+        "service": "forum-api",
+        "timestamp": int(time.time()),
+        "uptime_seconds": uptime,
+        "version": "1.0.0",
+        "environment": os.getenv("FLASK_MODE", "dev")
+    }), status_code
+```
+
+**Challenge — Monitoring avec Kuma :**
+
+Nous avons utilisé Uptime Kuma pour surveiller l’état de l’application.
+
+```
+Configuration de la sonde
+Nom : API Health
+Type : HTTP(s)
+URL : https://app:5000/health
+Intervalle : 60 secondes
+Tentatives : 2
+Timeout : 10 secondes
+Codes HTTP acceptés : 200-299
+Méthode : GET
+Notifications : Valhalla Notifier (Discord)
+Notification Discord
+```
+Une intégration Discord a été configurée afin de recevoir des alertes en cas de panne.
+```
+KumaValhalla Notifier
+APP
+ — 15:20
+⚠️Attention⚠️ @everyone :
+❌ Your service app went down. ❌
+Service Name
+app
+Service URL
+http://nginx/health
+Went Offline
+mardi 28 avril 2026 13:20
+Time (Europe/Paris)
+2026-04-28 15:20:56
+Error
+Request failed with status code 400
+Aujourd’hui à 15:20
+```
+
+Le service de monitoring est déployé directement dans le cluster Docker Swarm via le fichier `docker-stack.yml`.
+
+### Définition du service
+
+```yaml
+  # ─── Uptime Kuma monitoring ───
+  uptime-kuma:
+    image: louislam/uptime-kuma:2
+    ports:
+      - "3001:3001"
+    networks:
+      - frontend
+    volumes:
+      - uptime-kuma:/app/data
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+
+volumes:
+  uptime-kuma:
+```
+---
+
 ### Lab 5 – Scalabilité
 
 **Objectif** : rendre l'application scalable avec plusieurs instances.
