@@ -4,7 +4,7 @@
 
 param (
     [Parameter(Mandatory=$false)]
-    [ValidateSet("init", "deploy", "rotate-bao", "status", "destroy", "blue-green-switch")]
+    [ValidateSet("init", "deploy", "rotate-bao", "status", "destroy", "blue-green-switch", "reset-bao")]
     $Action = "status",
 
     [Parameter(Mandatory=$false)]
@@ -207,5 +207,18 @@ switch ($Action) {
         Write-Host "Rechargement de Nginx..."
         docker service update --force my_app_nginx | Out-Null
         Write-Host "Bascule effectuée." -ForegroundColor Green
+    }
+
+    "reset-bao" {
+        Write-Host "Nettoyage complet de l'etat OpenBao..." -ForegroundColor Yellow
+        docker stack rm my_app 2>$null
+        Write-Host "Attente de l'arret des conteneurs..."
+        Start-Sleep 15
+        docker volume rm my_app_openbao-data 2>$null
+        if (Test-Path "openbao") { 
+            Get-ChildItem "openbao" -Exclude "config.hcl", "agent.hcl", "forum-read.hcl" | Remove-Item -Force 
+        }
+        if (Test-Path "rendered") { Remove-Item "rendered/*" -Force -ErrorAction SilentlyContinue }
+        Write-Host "Etat réinitialisé. Relancez 'deploy' pour tout reconstruire." -ForegroundColor Green
     }
 }

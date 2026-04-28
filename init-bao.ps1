@@ -102,7 +102,7 @@ if ($status.initialized -eq $false) {
 }
 
 if (-not (Test-Path "openbao/.unseal-keys")) {
-  Write-Error "openbao/.unseal-keys absent apres init."
+  Write-Error "ERREUR: OpenBao est deja initialise mais les cles locales (.unseal-keys) sont absentes. Impossible de desceller (unseal).`nSolution: Si vous voulez repartir de zero, lancez: .\manage-swarm.ps1 -Action reset-bao"
   exit 1
 }
 
