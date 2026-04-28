@@ -793,8 +793,9 @@ def health():
     except Exception as e:
         errors.append(f"database: {str(e)}")
 
-    # Check fichiers critiques / config
-    if not os.getenv("SECRET_KEY"):
+    # Check fichiers critiques / config (via secrets_manager)
+    from secrets_manager import get_secret
+    if not get_secret("SECRET_KEY"):
         errors.append("missing SECRET_KEY")
 
     status_code = 200 if not errors else 400
