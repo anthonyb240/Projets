@@ -38,7 +38,7 @@ function Invoke-Bao {
   return $out
 }
 
-# Attente disponibilité OpenBao
+# Attente disponibilite OpenBao
 $ready = $false
 
 for ($i = 1; $i -le 60; $i++) {
@@ -61,7 +61,6 @@ if (-not $ready) {
 # Status JSON
 $statusRaw = docker exec $baoContainer sh -lc "export BAO_ADDR=http://127.0.0.1:8200; bao status -format=json" 2>&1
 
-# bao status retourne parfois exit 2 si sealed, donc on ne bloque pas uniquement sur LASTEXITCODE
 try {
   $status = $statusRaw | ConvertFrom-Json
 } catch {
@@ -121,11 +120,12 @@ if ($keys.Count -lt 3) {
 }
 
 Write-Host "::add-mask::$rootToken"
+
 foreach ($k in $keys) {
   Write-Host "::add-mask::$k"
 }
 
-# Unseal si nécessaire
+# Unseal si necessaire
 $statusRaw = docker exec $baoContainer sh -lc "export BAO_ADDR=http://127.0.0.1:8200; bao status -format=json" 2>&1
 $status = $statusRaw | ConvertFrom-Json
 
@@ -144,7 +144,7 @@ if ($status.sealed -eq $true) {
   Write-Host "OpenBao deja unsealed."
 }
 
-# Vérification finale unseal
+# Verification finale unseal
 $statusRaw = docker exec $baoContainer sh -lc "export BAO_ADDR=http://127.0.0.1:8200; bao status -format=json" 2>&1
 $status = $statusRaw | ConvertFrom-Json
 
@@ -158,30 +158,43 @@ Write-Host "OpenBao unsealed OK"
 # Configuration secrets
 Write-Host "Configuration KV et secrets..."
 
-# Enable KV v2 si pas déjà présent
-docker exec $baoContainer sh -lc "export BAO_ADDR=http://127.0.0.1:8200; export BAO_TOKEN='$rootToken'; bao secrets enable -path=secret kv-v2" 2>&1 | Out-Null
+# Enable KV v2 si pas deja present.
+# Si deja active, on ignore l'erreur "path is already in use".
+$enableOut = docker exec $baoContainer sh -lc "export BAO_ADDR=http://127.0.0.1:8200; export BAO_TOKEN='$rootToken'; bao secrets enable -path=secret kv-v2" 2>&1
 
-# Ecriture des secrets
+if ($LASTEXITCODE -ne 0 -and ($enableOut | Out-String) -notmatch "path is already in use") {
+  Write-Error "Activation KV echouee. Sortie:`n$enableOut"
+  exit 1
+}
+
+# Ecriture des secrets au chemin attendu par l'agent:
+# CLI KV v2: secret/forum/dev
+# API/policy: secret/data/forum/dev
 $encodedFlask = $FlaskSecretKey.Replace("'", "'\''")
 $encodedUser = $UsernameDb.Replace("'", "'\''")
 $encodedPass = $PasswordDb.Replace("'", "'\''")
 
-$putOut = docker exec $baoContainer sh -lc "export BAO_ADDR=http://127.0.0.1:8200; export BAO_TOKEN='$rootToken'; bao kv put secret/app FLASK_SECRET_KEY='$encodedFlask' USERNAME_DB='$encodedUser' PASSWORD_DB='$encodedPass'" 2>&1
+$putOut = docker exec $baoContainer sh -lc "export BAO_ADDR=http://127.0.0.1:8200; export BAO_TOKEN='$rootToken'; bao kv put secret/forum/dev FLASK_SECRET_KEY='$encodedFlask' USERNAME_DB='$encodedUser' PASSWORD_DB='$encodedPass'" 2>&1
 
 if ($LASTEXITCODE -ne 0) {
   Write-Error "Ecriture secrets echouee. Sortie:`n$putOut"
   exit 1
 }
 
-Write-Host "Secrets ecrits dans secret/app"
+Write-Host "Secrets ecrits dans secret/forum/dev"
 
 # AppRole pour l'agent
 Write-Host "Configuration AppRole..."
 
-docker exec $baoContainer sh -lc "export BAO_ADDR=http://127.0.0.1:8200; export BAO_TOKEN='$rootToken'; bao auth enable approle" 2>&1 | Out-Null
+$authOut = docker exec $baoContainer sh -lc "export BAO_ADDR=http://127.0.0.1:8200; export BAO_TOKEN='$rootToken'; bao auth enable approle" 2>&1
+
+if ($LASTEXITCODE -ne 0 -and ($authOut | Out-String) -notmatch "path is already in use") {
+  Write-Error "Activation AppRole echouee. Sortie:`n$authOut"
+  exit 1
+}
 
 $policy = @'
-path "secret/data/app" {
+path "secret/data/forum/dev" {
   capabilities = ["read"]
 }
 '@
@@ -189,39 +202,60 @@ path "secret/data/app" {
 $policyFile = [System.IO.Path]::GetTempFileName()
 $policy | Set-Content -Path $policyFile -Encoding ASCII
 
-docker cp $policyFile "${baoContainer}:/tmp/app-policy.hcl"
+docker cp $policyFile "${baoContainer}:/tmp/forum-read.hcl"
 Remove-Item $policyFile -Force -ErrorAction SilentlyContinue
 
-$policyOut = docker exec $baoContainer sh -lc "export BAO_ADDR=http://127.0.0.1:8200; export BAO_TOKEN='$rootToken'; bao policy write app-policy /tmp/app-policy.hcl" 2>&1
+if ($LASTEXITCODE -ne 0) {
+  Write-Error "Copie policy dans le conteneur echouee."
+  exit 1
+}
+
+$policyOut = docker exec $baoContainer sh -lc "export BAO_ADDR=http://127.0.0.1:8200; export BAO_TOKEN='$rootToken'; bao policy write forum-read /tmp/forum-read.hcl" 2>&1
 
 if ($LASTEXITCODE -ne 0) {
   Write-Error "Creation policy echouee. Sortie:`n$policyOut"
   exit 1
 }
 
-$roleOut = docker exec $baoContainer sh -lc "export BAO_ADDR=http://127.0.0.1:8200; export BAO_TOKEN='$rootToken'; bao write auth/approle/role/app-role token_policies=app-policy token_ttl=1h token_max_ttl=4h" 2>&1
+$roleOut = docker exec $baoContainer sh -lc "export BAO_ADDR=http://127.0.0.1:8200; export BAO_TOKEN='$rootToken'; bao write auth/approle/role/forum token_policies=forum-read token_ttl=1h token_max_ttl=4h" 2>&1
 
 if ($LASTEXITCODE -ne 0) {
   Write-Error "Creation role AppRole echouee. Sortie:`n$roleOut"
   exit 1
 }
 
-$roleId = docker exec $baoContainer sh -lc "export BAO_ADDR=http://127.0.0.1:8200; export BAO_TOKEN='$rootToken'; bao read -field=role_id auth/approle/role/app-role/role-id" 2>&1
+$roleId = docker exec $baoContainer sh -lc "export BAO_ADDR=http://127.0.0.1:8200; export BAO_TOKEN='$rootToken'; bao read -field=role_id auth/approle/role/forum/role-id" 2>&1
 
 if ($LASTEXITCODE -ne 0) {
   Write-Error "Lecture role_id echouee. Sortie:`n$roleId"
   exit 1
 }
 
-$secretId = docker exec $baoContainer sh -lc "export BAO_ADDR=http://127.0.0.1:8200; export BAO_TOKEN='$rootToken'; bao write -f -field=secret_id auth/approle/role/app-role/secret-id" 2>&1
+$secretId = docker exec $baoContainer sh -lc "export BAO_ADDR=http://127.0.0.1:8200; export BAO_TOKEN='$rootToken'; bao write -f -field=secret_id auth/approle/role/forum/secret-id" 2>&1
 
 if ($LASTEXITCODE -ne 0) {
   Write-Error "Generation secret_id echouee. Sortie:`n$secretId"
   exit 1
 }
 
-$roleId.Trim() | Set-Content -Path "openbao/role_id" -Encoding ASCII
-$secretId.Trim() | Set-Content -Path "openbao/secret_id" -Encoding ASCII
+$roleId = ($roleId | Out-String).Trim()
+$secretId = ($secretId | Out-String).Trim()
+
+if (-not $roleId) {
+  Write-Error "role_id vide."
+  exit 1
+}
+
+if (-not $secretId) {
+  Write-Error "secret_id vide."
+  exit 1
+}
+
+Write-Host "::add-mask::$roleId"
+Write-Host "::add-mask::$secretId"
+
+$roleId | Set-Content -Path "openbao/role_id" -Encoding ASCII
+$secretId | Set-Content -Path "openbao/secret_id" -Encoding ASCII
 
 Write-Host "AppRole OK"
 Write-Host "role_id et secret_id sauvegardes"
