@@ -5,8 +5,7 @@
 param (
     [Parameter(Mandatory=$false)]
     [ValidateSet("init", "deploy", "rotate-bao", "status", "destroy")]
-    $Action = "status",
-
+    $Action = "status"
 )
 
 # Empeche PowerShell 7+ de traiter stderr docker comme exception
