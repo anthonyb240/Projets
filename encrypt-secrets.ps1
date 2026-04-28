@@ -1,44 +1,76 @@
-# encrypt-secrets.ps1
-# Helper local pour chiffrer secrets en fichier secrets.enc commit-able
-# Usage:
-#   $env:SECRETS_PASSPHRASE = "ma-phrase-secrete"
-#   .\encrypt-secrets.ps1 -FlaskSecretKey "..." -UsernameDb "..." -PasswordDb "..."
-#
-# Apres: commit secrets.enc + ajoute SECRETS_PASSPHRASE aux GitHub Secrets
-
 param(
-    [Parameter(Mandatory=$true)] $FlaskSecretKey,
-    [Parameter(Mandatory=$true)] $UsernameDb,
-    [Parameter(Mandatory=$true)] $PasswordDb
+  [Parameter(Mandatory = $true)]
+  [string]$FlaskSecretKey,
+
+  [Parameter(Mandatory = $true)]
+  [string]$UsernameDb,
+
+  [Parameter(Mandatory = $true)]
+  [string]$PasswordDb
 )
 
-$pass = $env:SECRETS_PASSPHRASE
-if (-not $pass) {
-    $pass = Read-Host -AsSecureString "Passphrase de chiffrement"
-    $pass = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto(
-        [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($pass))
+$ErrorActionPreference = "Stop"
+
+if (-not $env:SECRETS_PASSPHRASE) {
+  Write-Error "SECRETS_PASSPHRASE manquant. Exemple: `$env:SECRETS_PASSPHRASE = 'ma-passphrase-forte'"
+  exit 1
 }
 
-# Plaintext format KEY=VALUE
-$plain = @"
+Write-Host "::add-mask::$env:SECRETS_PASSPHRASE"
+
+$opensslCandidates = @(
+  "openssl",
+  "C:\Program Files\Git\usr\bin\openssl.exe",
+  "C:\Program Files\OpenSSL-Win64\bin\openssl.exe",
+  "C:\Program Files\OpenSSL-Win32\bin\openssl.exe"
+)
+
+$openssl = $null
+
+foreach ($candidate in $opensslCandidates) {
+  try {
+    & $candidate version *> $null
+    $openssl = $candidate
+    break
+  } catch {}
+}
+
+if (-not $openssl) {
+  Write-Error "OpenSSL introuvable. Installe Git for Windows ou OpenSSL."
+  exit 1
+}
+
+Write-Host "OpenSSL trouve: $openssl"
+
+$repoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+$enc = Join-Path $repoRoot "secrets.enc"
+$tmp = [System.IO.Path]::GetTempFileName()
+
+try {
+  @"
 FLASK_SECRET_KEY=$FlaskSecretKey
 USERNAME_DB=$UsernameDb
 PASSWORD_DB=$PasswordDb
-"@
+"@ | Set-Content -Path $tmp -Encoding UTF8 -NoNewline
 
-# Ecris fichier temp
-$tmp = [System.IO.Path]::GetTempFileName()
-$utf8 = New-Object System.Text.UTF8Encoding $false
-[System.IO.File]::WriteAllText($tmp, $plain, $utf8)
+  Write-Host "::add-mask::$FlaskSecretKey"
+  Write-Host "::add-mask::$UsernameDb"
+  Write-Host "::add-mask::$PasswordDb"
 
-# Chiffre via openssl (ships with Git for Windows)
-$enc = "secrets.enc"
-& openssl enc -aes-256-cbc -pbkdf2 -salt -in $tmp -out $enc -pass "pass:$pass"
+  & $openssl enc -aes-256-cbc -pbkdf2 -salt `
+    -in $tmp `
+    -out $enc `
+    -pass "pass:$env:SECRETS_PASSPHRASE"
 
-Remove-Item $tmp -Force
-if (Test-Path $enc) {
-    Write-Host "Chiffre dans $enc" -ForegroundColor Green
-    Write-Host "Commit ce fichier. Ajoute SECRETS_PASSPHRASE='$pass' a GitHub Secrets." -ForegroundColor Cyan
-} else {
-    Write-Error "Echec chiffrement"
+  if ($LASTEXITCODE -ne 0) {
+    Write-Error "Chiffrement echoue."
+    exit 1
+  }
+
+  Write-Host "OK: secrets.enc genere: $enc"
+  Write-Host "Commit ce fichier: git add secrets.enc && git commit -m `"update encrypted secrets`""
+  Write-Host "Ajoute/maj SECRETS_PASSPHRASE dans GitHub Secrets avec la meme passphrase."
+}
+finally {
+  Remove-Item $tmp -Force -ErrorAction SilentlyContinue
 }
