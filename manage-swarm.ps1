@@ -21,50 +21,47 @@ function Check-Swarm {
 }
 
 function Wait-OpenBao {
-    for ($i = 1; $i -le 20; $i++) {
+    for ($i = 1; $i -le 30; $i++) {
         try {
             $r = Invoke-WebRequest -UseBasicParsing -Uri http://localhost:8200/v1/sys/health -TimeoutSec 3 -ErrorAction Stop
             if ($r.StatusCode -eq 200) { Write-Host "OpenBao ready" -ForegroundColor Green; return $true }
         } catch {}
-        Start-Sleep 2
+        Write-Host "Wait OpenBao $i/30..."
+        Start-Sleep 3
     }
     return $false
 }
 
-function Bootstrap-OpenBao {
-    param($SK, $AK, $DBP)
-    Write-Host "Bootstrap OpenBao..." -ForegroundColor Yellow
+function Get-OpenBaoContainer {
+    return (docker ps -q --filter "name=my_app_openbao" | Select-Object -First 1)
+}
 
-    # Suppress PowerShell NativeCommandError sur docker stderr
+function Bootstrap-OpenBao {
+    param($SK, $AK, $DBP, $BaoContainer)
+    Write-Host "Bootstrap OpenBao container=$BaoContainer..." -ForegroundColor Yellow
+
     $ErrorActionPreference = 'Continue'
     $PSNativeCommandUseErrorActionPreference = $false
 
-    # KV v2 deja monte en mode dev
-    & docker exec -e BAO_ADDR=http://127.0.0.1:8200 -e BAO_TOKEN=root openbao `
+    & docker exec -e BAO_ADDR=http://127.0.0.1:8200 -e BAO_TOKEN=root $BaoContainer `
         bao kv put secret/forum/dev "SECRET_KEY=$SK" "API_KEY=$AK" "DB_PASSWORD=$DBP" 2>&1 | Out-Null
 
-    # Active AppRole (idempotent - ignore erreur si deja enabled)
-    & docker exec -e BAO_ADDR=http://127.0.0.1:8200 -e BAO_TOKEN=root openbao `
+    & docker exec -e BAO_ADDR=http://127.0.0.1:8200 -e BAO_TOKEN=root $BaoContainer `
         bao auth enable approle 2>&1 | Out-Null
 
-    # Policy - ecris fichier puis copie dans conteneur (evite hell d'escape PowerShell -> sh)
     $policyPath = Join-Path (Get-Location) "openbao\forum-read.hcl"
     $utf8NoBomPol = New-Object System.Text.UTF8Encoding $false
     [System.IO.File]::WriteAllText($policyPath, 'path "secret/data/forum/dev" { capabilities = ["read"] }', $utf8NoBomPol)
-    & docker cp $policyPath openbao:/tmp/p.hcl 2>&1 | Out-Null
-    $policyOut = & docker exec -e BAO_ADDR=http://127.0.0.1:8200 -e BAO_TOKEN=root openbao `
-        bao policy write forum-read /tmp/p.hcl 2>&1
-    Write-Host "Policy result: $policyOut"
+    & docker cp $policyPath "${BaoContainer}:/tmp/p.hcl" 2>&1 | Out-Null
+    & docker exec -e BAO_ADDR=http://127.0.0.1:8200 -e BAO_TOKEN=root $BaoContainer `
+        bao policy write forum-read /tmp/p.hcl 2>&1 | Out-Null
 
-    # Role
-    $roleOut = & docker exec -e BAO_ADDR=http://127.0.0.1:8200 -e BAO_TOKEN=root openbao `
-        bao write auth/approle/role/forum token_policies=forum-read token_ttl=1h token_max_ttl=4h 2>&1
-    Write-Host "Role result: $roleOut"
+    & docker exec -e BAO_ADDR=http://127.0.0.1:8200 -e BAO_TOKEN=root $BaoContainer `
+        bao write auth/approle/role/forum token_policies=forum-read token_ttl=1h token_max_ttl=4h 2>&1 | Out-Null
 
-    # Recupere creds
-    $roleId = & docker exec -e BAO_ADDR=http://127.0.0.1:8200 -e BAO_TOKEN=root openbao `
+    $roleId = & docker exec -e BAO_ADDR=http://127.0.0.1:8200 -e BAO_TOKEN=root $BaoContainer `
         bao read -field=role_id auth/approle/role/forum/role-id 2>$null
-    $secretId = & docker exec -e BAO_ADDR=http://127.0.0.1:8200 -e BAO_TOKEN=root openbao `
+    $secretId = & docker exec -e BAO_ADDR=http://127.0.0.1:8200 -e BAO_TOKEN=root $BaoContainer `
         bao write -f -field=secret_id auth/approle/role/forum/secret-id 2>$null
 
     if (-not $roleId -or -not $secretId) {
@@ -73,16 +70,11 @@ function Bootstrap-OpenBao {
     }
 
     if (-not (Test-Path "openbao")) { New-Item -ItemType Directory -Path "openbao" | Out-Null }
-    # IMPORTANT: ASCII no BOM (PS 5.1 default = UTF-16 BOM, casse l'auth Bao)
     $utf8NoBom = New-Object System.Text.UTF8Encoding $false
     [System.IO.File]::WriteAllText((Resolve-Path "openbao").Path + "\role_id", $roleId.Trim(), $utf8NoBom)
     [System.IO.File]::WriteAllText((Resolve-Path "openbao").Path + "\secret_id", $secretId.Trim(), $utf8NoBom)
 
-    # Hexdump 4 premiers octets pour debug encoding
-    $bytes = [System.IO.File]::ReadAllBytes((Resolve-Path "openbao").Path + "\role_id") | Select-Object -First 8
-    Write-Host "role_id first bytes: $($bytes -join ' ')" -ForegroundColor DarkGray
-
-    Write-Host "AppRole creds ecrits (UTF-8 no BOM)" -ForegroundColor Green
+    Write-Host "AppRole creds ecrits" -ForegroundColor Green
 }
 
 switch ($Action) {
@@ -109,26 +101,37 @@ switch ($Action) {
         # Prepare dossiers
         if (-not (Test-Path "rendered")) { New-Item -ItemType Directory -Path "rendered" | Out-Null }
 
-        # 1. Demarre OpenBao backend
-        Write-Host "Demarrage OpenBao..." -ForegroundColor Yellow
-        docker compose -f docker-compose.openbao.yml up -d openbao
+        # Si role_id/secret_id absent, ecris placeholder (sera remplace apres bootstrap)
+        if (-not (Test-Path "openbao/role_id")) { Set-Content "openbao/role_id" "placeholder" -NoNewline }
+        if (-not (Test-Path "openbao/secret_id")) { Set-Content "openbao/secret_id" "placeholder" -NoNewline }
 
+        # 1. Deploy stack initial (openbao + tout) - bao-agent va echouer auth, c'est OK
+        Write-Host "Deploy stack initial..." -ForegroundColor Yellow
+        docker stack deploy -c docker-stack.yml my_app
+
+        # 2. Attendre OpenBao ready (port 8200 publie via Swarm ingress)
         if (-not (Wait-OpenBao)) {
             Write-Error "OpenBao pas ready"
-            docker logs openbao --tail 30
+            $bao = Get-OpenBaoContainer
+            if ($bao) { docker logs $bao --tail 30 }
             exit 1
         }
 
-        # 2. Bootstrap (idempotent)
-        Bootstrap-OpenBao -SK $SecretKey -AK $ApiKey -DBP $DbPassword
+        # 3. Bootstrap (idempotent)
+        $baoCt = Get-OpenBaoContainer
+        if (-not $baoCt) {
+            Write-Error "Conteneur openbao introuvable"
+            exit 1
+        }
+        Bootstrap-OpenBao -SK $SecretKey -AK $ApiKey -DBP $DbPassword -BaoContainer $baoCt
 
-        # 3. Demarre agent (force recreate pour relire role_id/secret_id frais)
-        Write-Host "Demarrage bao-agent (force recreate)..." -ForegroundColor Yellow
-        docker compose -f docker-compose.openbao.yml up -d --force-recreate bao-agent
+        # 4. Force recreate bao-agent pour relire role_id/secret_id frais
+        Write-Host "Force redeploy bao-agent..." -ForegroundColor Yellow
+        docker service update --force my_app_bao-agent | Out-Null
 
-        # Attend fichier rendu
+        # 5. Attend fichier rendu
         $rendered = $false
-        for ($i = 1; $i -le 15; $i++) {
+        for ($i = 1; $i -le 30; $i++) {
             if ((Test-Path "rendered/app.env") -and (Get-Item "rendered/app.env").Length -gt 50) {
                 $rendered = $true
                 Write-Host "Fichier rendu OK ($i*2s)" -ForegroundColor Green
@@ -137,33 +140,28 @@ switch ($Action) {
             Start-Sleep 2
         }
         if (-not $rendered) {
+            $agent = docker ps -q --filter "name=my_app_bao-agent" | Select-Object -First 1
             Write-Host "=== Logs bao-agent ===" -ForegroundColor Red
-            docker logs bao-agent --tail 50
-            Write-Host "=== Contenu role_id ===" -ForegroundColor Red
-            Get-Content openbao/role_id
-            Write-Host "=== rendered/ files ===" -ForegroundColor Red
-            Get-ChildItem rendered/ -Force
-            Write-Error "Fichier rendered/app.env vide"
+            if ($agent) { docker logs $agent --tail 50 }
             exit 1
         }
 
-        # 4. Deploy Swarm stack
-        Write-Host "Deploy Swarm stack..." -ForegroundColor Yellow
-        docker stack deploy -c docker-stack.yml my_app
+        # 6. Force redeploy app pour qu'il lise le nouveau fichier rendu
+        Write-Host "Force redeploy app..." -ForegroundColor Yellow
+        docker service update --force my_app_app | Out-Null
 
-        # 5. Attend replicas
+        # 7. Attend replicas app 2/2
         for ($i = 1; $i -le 30; $i++) {
             $replicas = docker service ls --filter name=my_app_app --format "{{.Replicas}}"
-            Write-Host "Tentative $i/30: replicas=$replicas"
+            Write-Host "Replicas $i/30: $replicas"
             if ($replicas -eq "2/2") { Write-Host "Stack OK" -ForegroundColor Green; break }
             Start-Sleep 5
         }
 
-        # 6. Status final
         docker stack services my_app
-        Write-Host "`nOpenBao UI: http://localhost:8200 (token=root)" -ForegroundColor Cyan
-        Write-Host "App: http://localhost (Nginx -> Swarm app)" -ForegroundColor Cyan
-        Write-Host "Uptime Kuma: http://localhost:3001" -ForegroundColor Cyan
+        Write-Host "`nOpenBao UI:   http://localhost:8200 (token=root)" -ForegroundColor Cyan
+        Write-Host "App (Nginx):   http://localhost" -ForegroundColor Cyan
+        Write-Host "Uptime Kuma:  http://localhost:3001" -ForegroundColor Cyan
     }
 
     "rotate-bao" {
@@ -171,9 +169,11 @@ switch ($Action) {
             Write-Error "Args requis: -SecretKey -ApiKey -DbPassword"
             return
         }
+        $baoCt = Get-OpenBaoContainer
+        if (-not $baoCt) { Write-Error "openbao non running"; return }
         Write-Host "Rotation via OpenBao..." -ForegroundColor Yellow
-        docker exec -e BAO_ADDR=http://127.0.0.1:8200 -e BAO_TOKEN=root openbao `
-            bao kv put secret/forum/dev SECRET_KEY=$SecretKey API_KEY=$ApiKey DB_PASSWORD=$DbPassword
+        docker exec -e BAO_ADDR=http://127.0.0.1:8200 -e BAO_TOKEN=root $baoCt `
+            bao kv put secret/forum/dev "SECRET_KEY=$SecretKey" "API_KEY=$ApiKey" "DB_PASSWORD=$DbPassword"
         Write-Host "Agent re-render <5s, app re-read <15s. Aucun restart." -ForegroundColor Green
     }
 
@@ -182,8 +182,6 @@ switch ($Action) {
         docker node ls
         Write-Host "`n--- Services Swarm ---" -ForegroundColor Cyan
         docker service ls
-        Write-Host "`n--- OpenBao ---" -ForegroundColor Cyan
-        docker ps --filter "name=openbao" --filter "name=bao-agent" --format "table {{.Names}}`t{{.Status}}`t{{.Ports}}"
         Write-Host "`n--- Fichier rendu ---" -ForegroundColor Cyan
         if (Test-Path "rendered/app.env") {
             $info = Get-Item rendered/app.env
@@ -196,10 +194,9 @@ switch ($Action) {
     }
 
     "destroy" {
-        Write-Host "Destruction stack + OpenBao..." -ForegroundColor Yellow
+        Write-Host "Destruction stack..." -ForegroundColor Yellow
         docker stack rm my_app 2>$null
         Start-Sleep 10
-        docker compose -f docker-compose.openbao.yml down -v 2>$null
         Write-Host "Done" -ForegroundColor Green
     }
 }

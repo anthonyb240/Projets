@@ -1,6 +1,39 @@
 version: '3.8'
 
 services:
+  # ─── OpenBao backend (mode dev) ───
+  openbao:
+    image: openbao/openbao:latest
+    networks:
+      - frontend
+    environment:
+      BAO_DEV_ROOT_TOKEN_ID: root
+      BAO_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+    ports:
+      - "8200:8200"
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+
+  # ─── Agent OpenBao (rend secrets sur volume) ───
+  bao-agent:
+    image: openbao/openbao:latest
+    networks:
+      - frontend
+    user: "0:0"
+    volumes:
+      - ./openbao:/etc/openbao:ro
+      - ./rendered:/run/secrets-rendered
+    command: ["bao", "agent", "-config=/etc/openbao/agent.hcl"]
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+
+  # ─── Forum app (×2 replicas) ───
   app:
     image: ghcr.io/anthonyb240/projets:latest
     networks:
@@ -30,6 +63,7 @@ services:
       retries: 3
       start_period: 30s
 
+  # ─── Nginx reverse proxy ───
   nginx:
     image: nginx:alpine
     ports:
@@ -43,7 +77,8 @@ services:
       placement:
         constraints:
           - node.role == manager
-  
+
+  # ─── Uptime Kuma monitoring ───
   uptime-kuma:
     image: louislam/uptime-kuma:2
     ports:
@@ -64,3 +99,4 @@ volumes:
 networks:
   frontend:
     driver: overlay
+    attachable: true

@@ -13,7 +13,23 @@
       "Bash(break)",
       "Bash(docker exec *)",
       "Bash(docker logout *)",
-      "Bash(docker pull *)"
+      "Bash(docker pull *)",
+      "Bash(pip install *)",
+      "Bash(bandit -r . --exclude ./.venv,./.git,./.claude)",
+      "Bash(python -m bandit -r . --exclude ./.venv,./.git,./.claude,./openbao,./rendered,./instance)",
+      "Bash(docker network *)",
+      "Bash(docker stack *)",
+      "Bash(pwsh -File ./manage-swarm.ps1 -Action deploy -SecretKey \"test-key-1234567890123456789012345\" -ApiKey \"test-api\" -DbPassword \"test-db\")",
+      "Bash(powershell -ExecutionPolicy Bypass -File .\\\\manage-swarm.ps1 -Action deploy -SecretKey \"test-key-1234567890123456789012345\" -ApiKey \"test-api\" -DbPassword \"test-db\")",
+      "Bash(powershell -ExecutionPolicy Bypass -File \"C:/Users/antho/Desktop/Projets/manage-swarm.ps1\" -Action deploy -SecretKey \"test-key-1234567890123456789012345\" -ApiKey \"test-api\" -DbPassword \"test-db\")",
+      "Bash(curl -s http://localhost:8200/v1/sys/health)",
+      "Bash(curl -s http://127.0.0.1:8200/v1/sys/health)",
+      "Bash(curl -sv http://127.0.0.1:8200/v1/sys/health)",
+      "Bash(docker port *)",
+      "Bash(docker restart *)",
+      "Bash(curl -v http://127.0.0.1:8200/v1/sys/health)",
+      "Bash(docker stop *)",
+      "Bash(docker rm *)"
     ]
   }
 }

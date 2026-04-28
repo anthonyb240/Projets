@@ -8,6 +8,9 @@ services:
       BAO_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
     ports:
       - "8200:8200"
+    networks:
+      - default
+      - swarm
 
   bao-agent:
     image: openbao/openbao:latest
@@ -19,3 +22,14 @@ services:
       - ./openbao:/etc/openbao:ro
       - ./rendered:/run/secrets-rendered
     command: ["bao", "agent", "-config=/etc/openbao/agent.hcl"]
+    networks:
+      - default
+      - swarm
+
+networks:
+  default:
+  # Network Swarm partage avec docker-stack.yml
+  # Doit exister avant compose up (cree par stack deploy ou manuellement)
+  swarm:
+    name: my_app_frontend
+    external: true

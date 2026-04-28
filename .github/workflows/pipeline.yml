@@ -345,37 +345,51 @@ jobs:
           docker pull ghcr.io/$REPO:latest
           docker tag ghcr.io/$REPO:latest app-securisee:latest
 
-      - name: Demarrer OpenBao backend
+      - name: Init Swarm + prepare placeholders
         run: |
-          docker compose -f docker-compose.openbao.yml up -d openbao
-          for i in $(seq 1 20); do
-            curl -sf http://localhost:8200/v1/sys/health > /dev/null && echo "OpenBao up" && exit 0
-            sleep 2
+          docker swarm init
+          mkdir -p openbao rendered
+          # Placeholders requis par stack mounts (bao-agent reecrira apres bootstrap)
+          [ -f openbao/role_id ] || echo "placeholder" > openbao/role_id
+          [ -f openbao/secret_id ] || echo "placeholder" > openbao/secret_id
+          chmod -R 777 rendered openbao
+
+      - name: Deploy stack initial (openbao + tout)
+        run: |
+          docker stack deploy -c docker-stack.yml my_app
+          docker stack services my_app
+
+      - name: Attendre OpenBao ready
+        run: |
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:8200/v1/sys/health > /dev/null && echo "OpenBao up ($i)" && exit 0
+            sleep 3
           done
-          docker logs openbao; exit 1
+          docker service logs --no-trunc --tail 50 my_app_openbao
+          exit 1
 
       - name: Bootstrap OpenBao depuis GitHub Secrets
         env:
-          BAO_ADDR: http://127.0.0.1:8200
-          BAO_TOKEN: root
           APP_SECRET_KEY: ${{ secrets.SECRET_KEY }}
           APP_API_KEY: ${{ secrets.API_KEY }}
           APP_DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
         run: |
-          # Fallback si GitHub Secrets vides (sinon Flask crash sur SECRET_KEY=None)
           : "${APP_SECRET_KEY:=ci-fallback-flask-secret-key-32chars-1234567890}"
           : "${APP_API_KEY:=ci-fallback-api-key}"
           : "${APP_DB_PASSWORD:=ci-fallback-db-password}"
 
-          docker exec -e BAO_ADDR -e BAO_TOKEN openbao \
+          BAO=$(docker ps -q --filter "name=my_app_openbao" | head -1)
+          test -n "$BAO" || { echo "openbao container introuvable"; exit 1; }
+
+          docker exec -e BAO_ADDR=http://127.0.0.1:8200 -e BAO_TOKEN=root $BAO \
             bao kv put secret/forum/dev \
               SECRET_KEY="$APP_SECRET_KEY" \
               API_KEY="$APP_API_KEY" \
               DB_PASSWORD="$APP_DB_PASSWORD"
 
-          docker exec -e BAO_ADDR -e BAO_TOKEN openbao bao auth enable approle
+          docker exec -e BAO_ADDR=http://127.0.0.1:8200 -e BAO_TOKEN=root $BAO bao auth enable approle || true
 
-          docker exec -e BAO_ADDR -e BAO_TOKEN openbao sh -c '
+          docker exec -e BAO_ADDR=http://127.0.0.1:8200 -e BAO_TOKEN=root $BAO sh -c '
             cat > /tmp/p.hcl <<EOF
           path "secret/data/forum/dev" {
             capabilities = ["read"]
@@ -383,49 +397,43 @@ jobs:
           EOF
             bao policy write forum-read /tmp/p.hcl'
 
-          docker exec -e BAO_ADDR -e BAO_TOKEN openbao \
+          docker exec -e BAO_ADDR=http://127.0.0.1:8200 -e BAO_TOKEN=root $BAO \
             bao write auth/approle/role/forum \
               token_policies=forum-read token_ttl=1h token_max_ttl=4h
 
-          ROLE_ID=$(docker exec -e BAO_ADDR -e BAO_TOKEN openbao \
+          ROLE_ID=$(docker exec -e BAO_ADDR=http://127.0.0.1:8200 -e BAO_TOKEN=root $BAO \
             bao read -field=role_id auth/approle/role/forum/role-id)
-          SECRET_ID=$(docker exec -e BAO_ADDR -e BAO_TOKEN openbao \
+          SECRET_ID=$(docker exec -e BAO_ADDR=http://127.0.0.1:8200 -e BAO_TOKEN=root $BAO \
             bao write -f -field=secret_id auth/approle/role/forum/secret-id)
 
-          mkdir -p openbao rendered
           printf "%s" "$ROLE_ID" > openbao/role_id
           printf "%s" "$SECRET_ID" > openbao/secret_id
-          chmod -R 777 rendered
 
-      - name: Demarrer bao-agent
+      - name: Force redeploy bao-agent (recharge role_id/secret_id)
         run: |
-          docker compose -f docker-compose.openbao.yml up -d bao-agent
-          for i in $(seq 1 20); do
-            if [ -s rendered/app.env ]; then
-              echo "Fichier rendu OK"
+          docker service update --force my_app_bao-agent
+          for i in $(seq 1 30); do
+            if [ -s rendered/app.env ] && [ "$(wc -c < rendered/app.env)" -gt 50 ]; then
+              echo "Fichier rendu OK ($i*2s)"
               exit 0
             fi
-            echo "Attente render $i/20"
             sleep 2
           done
-          docker logs bao-agent; exit 1
+          docker service logs --no-trunc --tail 50 my_app_bao-agent
+          ls -la rendered/
+          exit 1
 
-      - name: Verifier fichier rendu (sans logger valeurs)
+      - name: Verifier fichier rendu
         run: |
-          test -s rendered/app.env
-          LINES=$(grep -c "=" rendered/app.env)
           BYTES=$(wc -c < rendered/app.env)
+          LINES=$(grep -c "=" rendered/app.env)
           echo "$LINES secrets, $BYTES bytes"
-          [ "$LINES" -ge 3 ] || (echo "FAIL: moins de 3 secrets"; exit 1)
-          [ "$BYTES" -gt 50 ] || (echo "FAIL: fichier trop petit, valeurs vides?"; cat rendered/app.env | sed 's/=.*/=REDACTED/'; exit 1)
+          [ "$LINES" -ge 3 ] || exit 1
+          [ "$BYTES" -gt 50 ] || exit 1
 
-      - name: Init Swarm + deploy stack
+      - name: Force redeploy app (recharge secrets via SECRETS_FILE)
         run: |
-          docker swarm init
-          # On definit l'image locale pour le stack
-          export DOCKER_IMAGE=app-securisee:latest
-          docker stack deploy -c docker-stack.yml my_app
-
+          docker service update --force my_app_app
           for i in $(seq 1 90); do
             REPLICAS=$(docker service ls --filter name=my_app_app --format "{{.Replicas}}")
             echo "Tentative $i/90: replicas=$REPLICAS"
@@ -492,31 +500,26 @@ jobs:
           docker exec $C python -c "from secrets_manager import get_secret; assert get_secret('API_KEY'), 'API_KEY vide'; print('OK secrets lus')"
 
       - name: Test rotation Bao sans restart Swarm
-        env:
-          BAO_ADDR: http://127.0.0.1:8200
-          BAO_TOKEN: root
         run: |
           NEW="ROTATED_$(date +%s)"
-          docker exec -e BAO_ADDR -e BAO_TOKEN openbao \
+          BAO=$(docker ps -q --filter "name=my_app_openbao" | head -1)
+          docker exec -e BAO_ADDR=http://127.0.0.1:8200 -e BAO_TOKEN=root $BAO \
             bao kv put secret/forum/dev \
               SECRET_KEY="${{ secrets.SECRET_KEY }}" \
               API_KEY="$NEW" \
               DB_PASSWORD="${{ secrets.DB_PASSWORD }}"
 
-          # Agent static_secret_render_interval=5s + TTL loader 15s
-          # On laisse 30s + retry pour etre safe
-          C=$(docker ps -q --filter "name=my_app_app" | head -1)
+          # Agent re-render <5s
           for i in $(seq 1 12); do
             sleep 5
-            # Verifie d'abord que le fichier rendu a la nouvelle valeur (cote agent)
             if grep -q "API_KEY=$NEW" rendered/app.env; then
               echo "Fichier rendu a jour ($i*5s)"
               break
             fi
-            echo "Attente render $i/12..."
           done
 
-          # Puis attend que loader Python recharge (TTL 15s)
+          # App re-read TTL 15s
+          C=$(docker ps -q --filter "name=my_app_app" | head -1)
           for i in $(seq 1 6); do
             READ=$(docker exec $C python -c "from secrets_manager import get_secret; print(get_secret('API_KEY'))")
             echo "Tentative $i: lu='$READ'"
@@ -525,29 +528,26 @@ jobs:
           done
 
           echo "FAIL rotation"
-          echo "=== Fichier rendu ==="; cat rendered/app.env | sed 's/=.*/=REDACTED/'
-          echo "=== Logs agent ==="; docker logs bao-agent --tail 30
+          docker service logs --no-trunc --tail 30 my_app_bao-agent
           exit 1
-          echo "OK rotation Bao -> Swarm sans restart"
 
       - name: Logs en cas d'echec
         if: failure()
         timeout-minutes: 3
         run: |
-          echo "=== openbao ==="; timeout 20 docker logs openbao --tail 50 2>&1 || echo "timeout"
-          echo "=== bao-agent ==="; timeout 20 docker logs bao-agent --tail 50 2>&1 || echo "timeout"
-          echo "=== rendered/app.env ==="; ls -la rendered/
-          echo "=== swarm services ==="; timeout 20 docker stack services my_app 2>&1 || echo "timeout"
-          echo "=== app tasks ==="; timeout 20 docker service ps my_app_app --no-trunc 2>&1 || echo "timeout"
-          echo "=== app logs ==="; timeout 20 docker service logs --no-trunc --tail 100 my_app_app 2>&1 || echo "timeout"
+          echo "=== openbao ==="; timeout 20 docker service logs --no-trunc --tail 50 my_app_openbao 2>&1 || true
+          echo "=== bao-agent ==="; timeout 20 docker service logs --no-trunc --tail 50 my_app_bao-agent 2>&1 || true
+          echo "=== rendered/ ==="; ls -la rendered/
+          echo "=== services ==="; timeout 20 docker stack services my_app 2>&1 || true
+          echo "=== app tasks ==="; timeout 20 docker service ps my_app_app --no-trunc 2>&1 || true
+          echo "=== app logs ==="; timeout 20 docker service logs --no-trunc --tail 100 my_app_app 2>&1 || true
 
       - name: Cleanup
         if: always()
         run: |
-          docker stack rm my_app
-          sleep 10
-          docker compose -f docker-compose.openbao.yml down -v
-          docker swarm leave --force
+          docker stack rm my_app || true
+          sleep 15
+          docker swarm leave --force || true
   # ============================================================
   # Lab 5 : Push Docker (Publication sur GHCR)
   # ============================================================
