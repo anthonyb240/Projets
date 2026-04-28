@@ -232,7 +232,7 @@ switch ($Action) {
         docker volume rm my_app_openbao-data 2>$null
         if (Test-Path "openbao-data") { Remove-Item "openbao-data" -Recurse -Force }
         if (Test-Path "openbao") { 
-            Get-ChildItem "openbao" -Exclude "config.hcl", "agent.hcl", "forum-read.hcl" | Remove-Item -Force 
+            Get-ChildItem "openbao" -Exclude "*.hcl", "*.tmpl" | Remove-Item -Force 
         }
         if (Test-Path "rendered") { Remove-Item "rendered/*" -Force -ErrorAction SilentlyContinue }
         Write-Host "Etat réinitialisé. Relancez 'deploy' pour tout reconstruire." -ForegroundColor Green
