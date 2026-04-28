@@ -1,7 +1,7 @@
 version: '3.8'
 
 services:
-  # ─── OpenBao backend (mode server, persistent file storage) ───
+  # OpenBao backend
   openbao:
     image: openbao/openbao:latest
     user: "0:0"
@@ -28,7 +28,7 @@ services:
       restart_policy:
         condition: on-failure
 
-  # ─── Agent OpenBao (rend secrets sur volume) ───
+  # Agent OpenBao
   bao-agent:
     image: openbao/openbao:latest
     networks:
@@ -48,7 +48,7 @@ services:
       restart_policy:
         condition: on-failure
 
-  # ─── Forum app - BLUE (Default) ───
+  # Forum app - BLUE
   app:
     image: ghcr.io/anthonyb240/projets:latest
     networks:
@@ -65,14 +65,14 @@ services:
         parallelism: 1
         delay: 10s
         order: start-first
-      healthcheck:
-        test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000')"]
-        interval: 10s
-        timeout: 5s
-        retries: 3
-        start_period: 30s
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
 
-  # ─── Forum app - GREEN ───
+  # Forum app - GREEN
   app_green:
     image: ghcr.io/anthonyb240/projets:latest
     networks:
@@ -89,14 +89,14 @@ services:
         parallelism: 1
         delay: 10s
         order: start-first
-      healthcheck:
-        test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000')"]
-        interval: 10s
-        timeout: 5s
-        retries: 3
-        start_period: 30s
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
 
-  # ─── Nginx reverse proxy ───
+  # Nginx reverse proxy
   nginx:
     image: nginx:alpine
     ports:
@@ -113,7 +113,7 @@ services:
       restart_policy:
         condition: on-failure
 
-  # ─── Uptime Kuma monitoring ───
+  # Uptime Kuma monitoring
   uptime-kuma:
     image: louislam/uptime-kuma:2
     ports:
