@@ -397,7 +397,7 @@ L'application continue de fonctionner pendant la mise à l'échelle grâce au lo
 
 Nous avons implemente deux strategies majeures pour garantir la disponibilite et la stabilite des deploiements.
 
-### 4.1 Rolling Update (Mise a jour progressive)
+### 6.1 Rolling Update (Mise a jour progressive)
 
 C'est la strategie par defaut de Docker Swarm, configuree dans le `docker-stack.yml`.
 
@@ -414,7 +414,7 @@ C'est la strategie par defaut de Docker Swarm, configuree dans le `docker-stack.
   2. Lancez le deploiement : `.\manage-swarm.ps1 -Action deploy`.
   3. Observez la transition : `docker service ps my_app_app`. Vous verrez les anciens conteneurs s'arreter tandis que les nouveaux demarrent.
 
-### 4.2 Blue-Green Deployment (Bascule instantanee)
+### 6.2 Blue-Green Deployment (Bascule instantanee)
 
 Cette strategie permet de faire tourner deux versions de l'application en parallele (Blue et Green) et de basculer le trafic instantanement via Nginx.
 
