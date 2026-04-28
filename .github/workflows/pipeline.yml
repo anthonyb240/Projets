@@ -356,6 +356,7 @@ jobs:
     name: Local Swarm Deploy (OpenBao + Stack)
     needs: docker-push
     runs-on: self-hosted
+    environment: render_api
     steps:
       - name: Checkout
         uses: actions/checkout@v4
