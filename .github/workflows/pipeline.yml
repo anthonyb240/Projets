@@ -328,7 +328,9 @@ jobs:
     permissions:
       contents: read
       packages: read
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' || github.event_name == 'pull_request'
+    # DESACTIVE: Bao en mode production sealed -> pas testable en VM CI ephemere
+    # (faut .unseal-keys persistants, dispo seulement sur self-hosted runner)
+    if: false
     steps:
       - uses: actions/checkout@v4
 
@@ -600,25 +602,13 @@ jobs:
         run: |
           docker build -t app-securisee:latest -t "ghcr.io/anthonyb240/projets:latest" .
 
-      - name: Deploy stack + OpenBao + bootstrap
+      - name: Deploy stack (Bao deja initialise localement, secrets persistes dans volume)
         shell: powershell
-        env:
-          FLASK_SECRET_KEY: ${{ secrets.FLASK_SECRET_KEY }}
-          USERNAME_DB: ${{ secrets.USERNAME_DB }}
-          PASSWORD_DB: ${{ secrets.PASSWORD_DB }}
         run: |
-          if (-not $env:FLASK_SECRET_KEY -or -not $env:USERNAME_DB -or -not $env:PASSWORD_DB) {
-            Write-Error "GitHub Secrets manquants: FLASK_SECRET_KEY, USERNAME_DB, PASSWORD_DB"
-            exit 1
-          }
-          # Mask explicit pour eviter leak via Write-Host accidentel
-          Write-Host "::add-mask::$env:FLASK_SECRET_KEY"
-          Write-Host "::add-mask::$env:USERNAME_DB"
-          Write-Host "::add-mask::$env:PASSWORD_DB"
-          .\manage-swarm.ps1 -Action deploy `
-            -FlaskSecretKey $env:FLASK_SECRET_KEY `
-            -UsernameDb $env:USERNAME_DB `
-            -PasswordDb $env:PASSWORD_DB
+          # Bao = source de verite. Pipeline ne touche pas aux secrets.
+          # Bootstrap fait UNE FOIS local: .\init-bao.ps1
+          # Pipeline juste deploy stack + auto-unseal via .unseal-keys local
+          .\manage-swarm.ps1 -Action deploy
 
       - name: Status final
         if: always()
