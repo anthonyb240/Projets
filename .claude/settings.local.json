@@ -29,7 +29,11 @@
       "Bash(docker restart *)",
       "Bash(curl -v http://127.0.0.1:8200/v1/sys/health)",
       "Bash(docker stop *)",
-      "Bash(docker rm *)"
+      "Bash(docker rm *)",
+      "Bash(openssl version *)",
+      "Bash(cat)",
+      "Bash(openssl enc *)",
+      "Bash(rm /tmp/secrets.txt)"
     ]
   }
 }

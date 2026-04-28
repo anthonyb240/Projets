@@ -365,12 +365,56 @@ jobs:
         run: |
           docker build -t app-securisee:latest -t "ghcr.io/anthonyb240/projets:latest" .
 
-      - name: Deploy stack (Bao deja initialise localement, secrets persistes dans volume)
+      - name: Deploy stack
         shell: powershell
+        run: .\manage-swarm.ps1 -Action deploy
+
+      - name: Auto-init Bao si premier deploy (dechiffre secrets.enc)
+        shell: powershell
+        env:
+          SECRETS_PASSPHRASE: ${{ secrets.SECRETS_PASSPHRASE }}
         run: |
-          # Bao = source de verite. Pipeline ne touche pas aux secrets.
-          # Bootstrap fait UNE FOIS local: .\init-bao.ps1
-          # Pipeline juste deploy stack + auto-unseal via .unseal-keys local
+          # Skip si deja init
+          if (Test-Path "openbao/.unseal-keys") {
+            Write-Host "Bao deja init, skip" -ForegroundColor Green
+            exit 0
+          }
+
+          if (-not (Test-Path "secrets.enc")) {
+            Write-Error "secrets.enc absent. Run .\encrypt-secrets.ps1 local + commit."
+            exit 1
+          }
+          if (-not $env:SECRETS_PASSPHRASE) {
+            Write-Error "SECRETS_PASSPHRASE manque dans GitHub Secrets"
+            exit 1
+          }
+
+          # Dechiffre
+          Write-Host "::add-mask::$env:SECRETS_PASSPHRASE"
+          $tmp = [System.IO.Path]::GetTempFileName()
+          & openssl enc -d -aes-256-cbc -pbkdf2 -salt -in secrets.enc -out $tmp -pass "pass:$env:SECRETS_PASSPHRASE"
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "Dechiffrement echoue (passphrase invalide?)"
+            Remove-Item $tmp -Force -ErrorAction SilentlyContinue
+            exit 1
+          }
+
+          # Parse KEY=VALUE
+          $vars = @{}
+          Get-Content $tmp | ForEach-Object {
+            if ($_ -match '^([^=]+)=(.*)$') {
+              $vars[$matches[1].Trim()] = $matches[2]
+              Write-Host "::add-mask::$($matches[2])"
+            }
+          }
+          Remove-Item $tmp -Force
+
+          .\init-bao.ps1 `
+            -FlaskSecretKey $vars['FLASK_SECRET_KEY'] `
+            -UsernameDb $vars['USERNAME_DB'] `
+            -PasswordDb $vars['PASSWORD_DB']
+
+          # Re-deploy pour finaliser
           .\manage-swarm.ps1 -Action deploy
 
       - name: Status final
