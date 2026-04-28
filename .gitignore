@@ -4,10 +4,8 @@ __pycache__/
 *.pyc
 *.db
 static/aatvl5xf/
-rendered/
-openbao/role_id
-openbao/secret_id
-openbao/.token
 openbao/.unseal-keys
 openbao/.root-token
-openbao/forum-read.hcl
+openbao/role_id
+openbao/secret_id
+rendered/
