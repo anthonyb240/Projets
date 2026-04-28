@@ -4,12 +4,17 @@ services:
   # ─── OpenBao backend (mode server, persistent file storage) ───
   openbao:
     image: openbao/openbao:latest
-    command: ["server", "-config=/openbao/config/config.hcl"]
+    user: "0:0"
+    command: >
+      sh -lc "mkdir -p /openbao/data &&
+              chown -R openbao:openbao /openbao/data &&
+              exec docker-entrypoint.sh server -config=/openbao/config/config.hcl"
     networks:
       - frontend
     environment:
-      BAO_ADDR: http://0.0.0.0:8200
-    cap_add: [IPC_LOCK]
+      BAO_ADDR: http://127.0.0.1:8200
+    cap_add:
+      - IPC_LOCK
     ports:
       - "8200:8200"
     volumes:
@@ -20,6 +25,8 @@ services:
       placement:
         constraints:
           - node.role == manager
+      restart_policy:
+        condition: on-failure
 
   # ─── Agent OpenBao (rend secrets sur volume) ───
   bao-agent:
@@ -27,6 +34,8 @@ services:
     networks:
       - frontend
     user: "0:0"
+    environment:
+      BAO_ADDR: http://openbao:8200
     volumes:
       - ./openbao:/etc/openbao:ro
       - ./rendered:/run/secrets-rendered
@@ -36,6 +45,8 @@ services:
       placement:
         constraints:
           - node.role == manager
+      restart_policy:
+        condition: on-failure
 
   # ─── Forum app (×2 replicas) ───
   app:
@@ -81,6 +92,8 @@ services:
       placement:
         constraints:
           - node.role == manager
+      restart_policy:
+        condition: on-failure
 
   # ─── Uptime Kuma monitoring ───
   uptime-kuma:
@@ -96,6 +109,8 @@ services:
       placement:
         constraints:
           - node.role == manager
+      restart_policy:
+        condition: on-failure
 
 volumes:
   uptime-kuma:
