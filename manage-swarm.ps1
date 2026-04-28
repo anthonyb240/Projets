@@ -20,10 +20,20 @@ function Check-Swarm {
 }
 
 function Wait-OpenBao {
+    # Server mode sealed -> retourne 501/503, dev mode unsealed -> 200
+    # Accepte n'importe quelle reponse HTTP = container repond = up
     for ($i = 1; $i -le 30; $i++) {
         try {
-            $r = Invoke-WebRequest -UseBasicParsing -Uri http://localhost:8200/v1/sys/health -TimeoutSec 3 -ErrorAction Stop
-            if ($r.StatusCode -eq 200) { Write-Host "OpenBao ready" -ForegroundColor Green; return $true }
+            $r = Invoke-WebRequest -UseBasicParsing -Uri http://localhost:8200/v1/sys/health -TimeoutSec 3 -ErrorAction SilentlyContinue
+            Write-Host "OpenBao ready (HTTP $($r.StatusCode))" -ForegroundColor Green
+            return $true
+        } catch [System.Net.WebException] {
+            # Status code != 2xx = exception, mais container repond -> up
+            $code = $_.Exception.Response.StatusCode.value__
+            if ($code) {
+                Write-Host "OpenBao ready (HTTP $code, sealed/uninit)" -ForegroundColor Green
+                return $true
+            }
         } catch {}
         Write-Host "Wait OpenBao $i/30..."
         Start-Sleep 3
