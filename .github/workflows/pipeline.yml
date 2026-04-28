@@ -357,6 +357,7 @@ jobs:
     needs: docker-push
     runs-on: self-hosted
     environment: render_api
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -365,6 +366,27 @@ jobs:
         shell: powershell
         run: |
           docker build -t app-securisee:latest -t "ghcr.io/anthonyb240/projets:latest" .
+
+      - name: Install OpenSSL on Windows runner
+        shell: powershell
+        run: |
+          if (Get-Command openssl -ErrorAction SilentlyContinue) {
+            openssl version
+            exit 0
+          }
+
+          winget install ShiningLight.OpenSSL --silent --accept-package-agreements --accept-source-agreements
+
+          $env:PATH += ";C:\Program Files\OpenSSL-Win64\bin"
+
+          if (Test-Path "C:\Program Files\OpenSSL-Win64\bin\openssl.exe") {
+            & "C:\Program Files\OpenSSL-Win64\bin\openssl.exe" version
+          } elseif (Get-Command openssl -ErrorAction SilentlyContinue) {
+            openssl version
+          } else {
+            Write-Error "OpenSSL installe mais introuvable dans le PATH."
+            exit 1
+          }
 
       - name: Deploy stack
         shell: powershell
@@ -385,15 +407,45 @@ jobs:
             Write-Error "secrets.enc absent. Run .\encrypt-secrets.ps1 local + commit."
             exit 1
           }
+
           if (-not $env:SECRETS_PASSPHRASE) {
             Write-Error "SECRETS_PASSPHRASE manque dans GitHub Secrets"
             exit 1
           }
 
-          # Dechiffre
           Write-Host "::add-mask::$env:SECRETS_PASSPHRASE"
+
+          $opensslCandidates = @(
+            "openssl",
+            "C:\Program Files\OpenSSL-Win64\bin\openssl.exe",
+            "C:\Program Files\OpenSSL-Win32\bin\openssl.exe",
+            "C:\Program Files\Git\usr\bin\openssl.exe"
+          )
+
+          $openssl = $null
+
+          foreach ($candidate in $opensslCandidates) {
+            try {
+              & $candidate version *> $null
+              $openssl = $candidate
+              break
+            } catch {}
+          }
+
+          if (-not $openssl) {
+            Write-Error "OpenSSL introuvable sur le runner."
+            exit 1
+          }
+
+          Write-Host "OpenSSL trouve: $openssl"
+
           $tmp = [System.IO.Path]::GetTempFileName()
-          & openssl enc -d -aes-256-cbc -pbkdf2 -salt -in secrets.enc -out $tmp -pass "pass:$env:SECRETS_PASSPHRASE"
+
+          & $openssl enc -d -aes-256-cbc -pbkdf2 -salt `
+            -in secrets.enc `
+            -out $tmp `
+            -pass "pass:$env:SECRETS_PASSPHRASE"
+
           if ($LASTEXITCODE -ne 0) {
             Write-Error "Dechiffrement echoue (passphrase invalide?)"
             Remove-Item $tmp -Force -ErrorAction SilentlyContinue
@@ -402,13 +454,30 @@ jobs:
 
           # Parse KEY=VALUE
           $vars = @{}
+
           Get-Content $tmp | ForEach-Object {
             if ($_ -match '^([^=]+)=(.*)$') {
               $vars[$matches[1].Trim()] = $matches[2]
               Write-Host "::add-mask::$($matches[2])"
             }
           }
+
           Remove-Item $tmp -Force
+
+          if (-not $vars['FLASK_SECRET_KEY']) {
+            Write-Error "FLASK_SECRET_KEY absent apres dechiffrement."
+            exit 1
+          }
+
+          if (-not $vars['USERNAME_DB']) {
+            Write-Error "USERNAME_DB absent apres dechiffrement."
+            exit 1
+          }
+
+          if (-not $vars['PASSWORD_DB']) {
+            Write-Error "PASSWORD_DB absent apres dechiffrement."
+            exit 1
+          }
 
           .\init-bao.ps1 `
             -FlaskSecretKey $vars['FLASK_SECRET_KEY'] `
