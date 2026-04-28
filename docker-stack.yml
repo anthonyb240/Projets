@@ -18,7 +18,7 @@ services:
     ports:
       - "8200:8200"
     volumes:
-      - openbao-data:/openbao/data
+      - ./openbao-data:/openbao/data
       - ./openbao/config.hcl:/openbao/config/config.hcl:ro
     deploy:
       replicas: 1
@@ -132,7 +132,6 @@ services:
 
 volumes:
   uptime-kuma:
-  openbao-data:
 
 networks:
   frontend:

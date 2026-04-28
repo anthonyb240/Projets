@@ -215,6 +215,7 @@ switch ($Action) {
         Write-Host "Attente de l'arret des conteneurs..."
         Start-Sleep 15
         docker volume rm my_app_openbao-data 2>$null
+        if (Test-Path "openbao-data") { Remove-Item "openbao-data" -Recurse -Force }
         if (Test-Path "openbao") { 
             Get-ChildItem "openbao" -Exclude "config.hcl", "agent.hcl", "forum-read.hcl" | Remove-Item -Force 
         }
