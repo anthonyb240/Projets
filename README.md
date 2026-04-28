@@ -215,13 +215,16 @@ Avec `exit-code: '1'` et `severity: HIGH,CRITICAL`, Trivy faisait echouer l'ense
 Tous les jobs tournaient sur chaque push (meme les modifications de README). Aucune dependance conditionnelle, **gaspillage de minutes CI/CD**. [👉 Voir le correctif](#correctif-4--cicd-intelligente-lab-5)
 
 #### Erreur 5 : Docker build echoue a cause des BuildKit secrets
-Le `Dockerfile` utilise `--mount=type=secret,id=db_password` et `id=api_key`. Sans passer ces secrets au `docker build` dans le CI, le build echouait immediatement avec une erreur cryptique. [👉 Voir le correctif](#correctif-5--gestion-des-buildkit-secrets-en-ci)
+Le `Dockerfile` utilise `--mount=type=secret,id=ctf_flag` et plusieurs autres secrets. Sans passer ces secrets au `docker build` dans le CI, le build echouait immediatement avec une erreur cryptique. [👉 Voir le correctif](#correctif-5--gestion-des-buildkit-secrets-en-ci)
 
 #### Erreur 6 : Gitleaks detectait de faux positifs
 Le fichier `gitleaks.toml` contenait une regle custom qui matchait trop de choses, bloquant la pipeline sur des chaines legitimes (noms de variables, exemples dans les commentaires). [👉 Voir le correctif](#correctif-6--regle-gitleaks-affinee)
 
 #### Erreur 7 : DockerHub push tentait de tourner sur `dev`
 Le job `docker-push` essayait de se connecter a DockerHub sur chaque push de branche `dev`, alors que les secrets DockerHub ne sont supposes etre utilises qu'en production (`main`). [👉 Voir le correctif](#correctif-7--docker-push-conditionne-a-main)
+
+##### Erreur 8 : Gérer Docker Swarm automatiquement
+Etant donnné le contexte du projet nous avons été contraint de ne plus utiliser Render. En effet le free tier de Render ne permet plus l'accès SSH ni le déploiement via Docker Swarm. L'implémentation d'un Worker avec une VM était également trop compliqué avec le peu de temps qu'il nous restait. [👉 Voir le correctif](#correctif-8--mise-en-place-du-self-hosted)
 
 ### 3.3 Correctifs apportes
 
@@ -260,11 +263,12 @@ Les jobs `lint`, `sast-bandit`, `sast-semgrep` et `sca` utilisent `if: needs.cha
 Les secrets sont injectes via process substitution dans le job `docker-build-scan` :
 ```yaml
 docker build \
+  --secret id=ctf_flag,src=<(echo "FLAG{test_ci_cd}") \
   --secret id=db_password,src=<(echo "ci_test_password") \
   --secret id=api_key,src=<(echo "ci_test_api_key") \
   -t app-securisee:${{ github.sha }} .
 ```
-En production (`docker-push`), ces valeurs sont tirees des vrais secrets GitHub (`${{ secrets.DB_PASSWORD }}`, `${{ secrets.API_KEY }}`).
+En production (`docker-push`), ces valeurs sont tirees des vrais secrets GitHub (`${{ secrets.CTF_FLAG }}`, etc.).
 
 #### Correctif 6 : Regle Gitleaks affinee
 La regle custom dans `gitleaks.toml` a ete recentree sur le pattern strict :
@@ -291,6 +295,7 @@ A configurer dans **Settings > Secrets and variables > Actions** :
 |--------|-------------|
 | `DOCKERHUB_USERNAME` | Nom d'utilisateur DockerHub |
 | `DOCKERHUB_TOKEN` | Token d'acces DockerHub |
+| `CTF_FLAG` | Flag CTF pour le build Docker |
 | `DB_PASSWORD` | Mot de passe DB pour le build Docker |
 | `API_KEY` | Cle API pour le build Docker |
 
@@ -311,10 +316,231 @@ python app.py
 
 Ou via docker-compose :
 ```bash
+export CTF_FLAG="FLAG{dev}"
 export DB_PASSWORD="dev_password"
 export API_KEY="dev_api_key"
 docker compose up --build
 ```
+##### Correctif 8 : Mise en place du self-hosted
+Nous avons mis en place un self-hosted runner GitHub Actions sur notre machine locale. Cela permet à la pipeline de piloter Swarm automatiquement à chaque git push. Nous avons du installer un agent github puis configurer le pipeline.yml afin de piloter Docker Swarm.
+
+---
+
+## 4. Déploiement avec Docker Swarm (Labs 5, 6, 7)
+
+### Contexte : abandon de Render
+
+Render a été utilisé dans un premier temps pour héberger l'application. Cependant, le **free tier de Render ne permet plus l'accès SSH ni le déploiement via Docker Swarm**, et la mise en place d'un worker avec une VM tierce était trop complexe dans les délais impartis. Docker Swarm a donc été adopté en remplacement, ce qui constitue également une excellente introduction aux concepts de Kubernetes.
+
+> Docker Swarm est **obligatoire pour les labs 5, 6 et 7**. Les labs 8 et suivants sont optionnels (bonus/challenge).
+
+### Barème indicatif
+
+| Périmètre | Note approximative |
+|---|---|
+| Labs obligatoires uniquement | ~50% |
+| Obligatoires + bonus | ~80% |
+| Obligatoires + bonus + challenges | 100% |
+
+---
+
+### Lab 5 – Scalabilité
+
+**Objectif** : rendre l'application scalable avec plusieurs instances.
+
+**Obligatoire — 2 replicas via Docker Swarm :**
+
+Le fichier `docker-stack.yml` configure 2 replicas pour le service `app` :
+
+```yaml
+app:
+  image: ghcr.io/anthonyb240/projets:latest
+  deploy:
+    replicas: 2
+```
+
+Déploiement :
+```bash
+docker stack deploy -c docker-stack.yml my_app
+docker service ps my_app_app   # vérifier que les 2 instances tournent
+```
+
+**Bonus — Nginx comme reverse proxy :**
+
+Nginx est inclus dans le stack et distribue le trafic entre les 2 instances de l'application via le réseau overlay `frontend`. La configuration `nginx.conf` est montée en read-only.
+
+Pour observer la distribution des requêtes :
+```bash
+# Envoyer plusieurs requêtes et observer les logs de chaque réplica
+for i in {1..10}; do curl -s http://localhost:80 > /dev/null; done
+docker service logs my_app_app
+```
+
+**Challenge — Ajout / arrêt d'une instance à chaud :**
+
+```bash
+# Passer à 3 replicas
+docker service scale my_app_app=3
+
+# Revenir à 1 replica (l'app reste disponible)
+docker service scale my_app_app=1
+
+# Vérifier la stabilité
+docker service ps my_app_app
+```
+
+L'application continue de fonctionner pendant la mise à l'échelle grâce au load balancer interne de Swarm.
+
+---
+
+### Lab 6 – Stratégie de déploiement
+
+**Objectif** : mettre en place des stratégies de déploiement sans interruption de service.
+
+**Obligatoire — Rolling Update avec rollback automatique :**
+
+La configuration dans `docker-stack.yml` implémente le rolling update :
+
+```yaml
+deploy:
+  replicas: 2
+  update_config:
+    parallelism: 1        # mise à jour d'un réplica à la fois
+    delay: 10s            # attente entre chaque réplica
+    order: start-first    # nouvelle instance démarrée avant d'arrêter l'ancienne
+    failure_action: rollback  # rollback automatique en cas d'échec
+  rollback_config:
+    parallelism: 1
+    order: stop-first
+```
+
+Déployer une nouvelle version :
+```bash
+# Mettre à jour l'image (déclenche le rolling update)
+docker service update --image ghcr.io/anthonyb240/projets:nouvelle-version my_app_app
+
+# Observer le déroulement
+docker service ps my_app_app
+
+# Rollback manuel si besoin
+docker service rollback my_app_app
+```
+
+**Bonus — Blue/Green deployment :**
+
+Principe : deux environnements identiques (blue = actif, green = en préparation). Le basculement est instantané via Nginx.
+
+```bash
+# Déployer la version green en parallèle
+docker service create --name my_app_app_green \
+  --network my_app_frontend \
+  --replicas 2 \
+  ghcr.io/anthonyb240/projets:nouvelle-version
+
+# Vérifier que green est sain
+docker service ps my_app_app_green
+
+# Basculer le trafic (modifier upstream Nginx vers green)
+# En cas de problème, rollback immédiat vers blue
+docker service rm my_app_app_green
+```
+
+**Challenge — Canary deployment :**
+
+Exposer progressivement la nouvelle version à une fraction du trafic :
+
+```bash
+# 1 réplica sur 3 en nouvelle version = ~33% du trafic sur canary
+docker service scale my_app_app=2
+docker service create --name my_app_canary \
+  --network my_app_frontend \
+  --replicas 1 \
+  ghcr.io/anthonyb240/projets:canary-version
+
+# Observer les métriques / logs du canary
+docker service logs my_app_canary
+
+# Promouvoir si OK, sinon supprimer
+docker service rm my_app_canary
+```
+
+---
+
+### Lab 7 – Gestion des secrets
+
+**Objectif** : comprendre la progression naturelle de la gestion des secrets, de l'injection simple aux solutions dynamiques.
+
+#### Étape 1 – Approche classique : injection au démarrage (obligatoire)
+
+Les secrets sont montés comme fichiers dans le conteneur via Docker Swarm secrets :
+
+```bash
+# Créer les secrets dans Swarm
+echo "ma-cle-secrete" | docker secret create SECRET_KEY -
+
+# Référencer dans docker-stack.yml
+secrets:
+  SECRET_KEY:
+    external: true
+```
+
+L'application les lit au démarrage. **Limite observée** : modifier un secret impose de redémarrer le service pour que le changement soit pris en compte, ce qui impacte la disponibilité.
+
+```bash
+# Démonstration de la limite
+docker secret rm SECRET_KEY
+echo "nouvelle-cle" | docker secret create SECRET_KEY -
+docker service update --force my_app_app   # restart obligatoire
+```
+
+#### Étape 2 – Agent OpenBao (bonus) : rotation sans restart
+
+Pour répondre aux limites de l'approche classique, un agent OpenBao est mis en place. Il récupère dynamiquement les secrets et les rend disponibles dans un fichier monté en volume partagé.
+
+Le fichier `docker-compose_openbao.yml` (et son équivalent dans `docker-stack.yml`) implémente cette architecture :
+
+```
+OpenBao (serveur) ──► bao-agent ──► /run/secrets-rendered/app.env
+                                              │
+                                         app (lit le fichier)
+                                    avec TTL de 15 secondes (SECRETS_TTL)
+```
+
+L'application relit le fichier toutes les 15 secondes (`SECRETS_TTL=15` dans `docker-stack.yml`), ce qui permet une rotation **partielle sans restart** du service principal.
+
+```bash
+# Démarrer OpenBao en mode dev
+docker compose -f docker-compose_openbao.yml up -d
+
+# Vérifier que les secrets sont bien rendus
+cat rendered/app.env
+```
+
+**Avantages par rapport à l'approche classique :**
+- Rotation des secrets sans redémarrage du service
+- Secrets jamais stockés dans les variables d'environnement (moins de surface d'exposition)
+- Gestion centralisée compatible avec les environnements modernes
+
+**Challenge — Rotation dynamique complète :**
+
+Aller plus loin avec des leases Vault/OpenBao à courte durée de vie, un audit log des accès aux secrets, et une révocation à la demande sans impact sur la disponibilité.
+
+---
+
+### Self-hosted runner GitHub Actions (lien avec la pipeline)
+
+Pour piloter Swarm automatiquement depuis la pipeline CI/CD, un **self-hosted runner** a été installé sur la machine locale hébergeant le Swarm. Cela permet au job de déploiement de la pipeline d'exécuter `docker stack deploy` directement sur le nœud manager, sans exposition SSH externe.
+
+```yaml
+# Dans pipeline.yml
+deploy:
+  runs-on: self-hosted
+  steps:
+    - name: Deploy to Swarm
+      run: docker stack deploy -c docker-stack.yml my_app
+```
+
+---
 
 ## Stack technique
 
