@@ -48,7 +48,7 @@ services:
       restart_policy:
         condition: on-failure
 
-  # ─── Forum app (×2 replicas) ───
+  # ─── Forum app - BLUE (Default) ───
   app:
     image: ghcr.io/anthonyb240/projets:latest
     networks:
@@ -65,18 +65,36 @@ services:
         parallelism: 1
         delay: 10s
         order: start-first
-        failure_action: rollback
-      rollback_config:
+      healthcheck:
+        test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000')"]
+        interval: 10s
+        timeout: 5s
+        retries: 3
+        start_period: 30s
+
+  # ─── Forum app - GREEN ───
+  app_green:
+    image: ghcr.io/anthonyb240/projets:latest
+    networks:
+      - frontend
+    environment:
+      SQLALCHEMY_DATABASE_URI: sqlite:///forum.db
+      SECRETS_FILE: /run/secrets-rendered/app.env
+      SECRETS_TTL: "15"
+    volumes:
+      - ./rendered:/run/secrets-rendered:ro
+    deploy:
+      replicas: 2
+      update_config:
         parallelism: 1
-        order: stop-first
-      restart_policy:
-        condition: on-failure
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000')"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 30s
+        delay: 10s
+        order: start-first
+      healthcheck:
+        test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000')"]
+        interval: 10s
+        timeout: 5s
+        retries: 3
+        start_period: 30s
 
   # ─── Nginx reverse proxy ───
   nginx:

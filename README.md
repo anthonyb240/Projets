@@ -12,6 +12,9 @@ Application web de forum dediee a la communaute **Brawlhalla**, developpee avec 
    - [3.1 Descriptif de la pipeline](#31-descriptif-de-la-pipeline)
    - [3.2 Erreurs les plus grosses rencontrees](#32-erreurs-les-plus-grosses-rencontrees)
    - [3.3 Correctifs apportes](#33-correctifs-apportes)
+4. [Strategies de deploiement](#4-strategies-de-deploiement)
+   - [4.1 Rolling Update](#41-rolling-update)
+   - [4.2 Blue-Green Deployment](#42-blue-green-deployment)
 
 ---
 
@@ -334,6 +337,47 @@ Nous avons mis en place un self-hosted runner GitHub Actions sur notre machine l
 - **Securite** : Gitleaks, TruffleHog, Flake8, Bandit, Semgrep, pip-audit, Trivy, Wapiti
 
 
-## Difficulté deploiement 
-
 - Lint flake8 : config.py pb de syntaxe ( espace ect)
+
+---
+
+## 4. Strategies de deploiement
+
+Nous avons implemente deux strategies majeures pour garantir la disponibilite et la stabilite des deploiements.
+
+### 4.1 Rolling Update (Mise a jour progressive)
+
+C'est la strategie par defaut de Docker Swarm, configuree dans le `docker-stack.yml`.
+
+- **Principe** : Les conteneurs de la nouvelle version sont deployes un par un. Swarm attend que le nouveau soit "Healthy" avant de supprimer l'ancien.
+- **Configuration** (`docker-stack.yml`) :
+  ```yaml
+  update_config:
+    parallelism: 1
+    delay: 10s
+    order: start-first
+  ```
+- **Comment tester** :
+  1. Modifiez un fichier (ex: `templates/index.html`).
+  2. Lancez le deploiement : `.\manage-swarm.ps1 -Action deploy`.
+  3. Observez la transition : `docker service ps my_app_app`. Vous verrez les anciens conteneurs s'arreter tandis que les nouveaux demarrent.
+
+### 4.2 Blue-Green Deployment (Bascule instantanee)
+
+Cette strategie permet de faire tourner deux versions de l'application en parallele (Blue et Green) et de basculer le trafic instantanement via Nginx.
+
+- **Principe** :
+  - **Blue** : Version actuellement en production (`service app`).
+  - **Green** : Nouvelle version deployee en parallele (`service app_green`).
+- **Comment tester** :
+  1. Verifiez que les deux services sont deployes : `docker service ls`.
+  2. Pour passer sur la version **Green** :
+     ```powershell
+     .\manage-swarm.ps1 -Action blue-green-switch -TargetColor green
+     ```
+  3. Nginx recharge sa configuration et pointe desormais vers `app_green`.
+  4. Pour revenir en arriere (Rollback) :
+     ```powershell
+     .\manage-swarm.ps1 -Action blue-green-switch -TargetColor blue
+     ```
+- **Avantage** : Le basculement est quasi-instantané et le retour en arriere est immediat en cas de bug critique detecte post-deploiement.

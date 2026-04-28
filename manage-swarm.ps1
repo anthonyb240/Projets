@@ -4,8 +4,14 @@
 
 param (
     [Parameter(Mandatory=$false)]
-    [ValidateSet("init", "deploy", "rotate-bao", "status", "destroy")]
-    $Action = "status"
+    [ValidateSet("init", "deploy", "rotate-bao", "status", "destroy", "blue-green-switch")]
+    $Action = "status",
+
+    [Parameter(Mandatory=$false)]
+    $TargetColor = "blue",
+
+    [Parameter(Mandatory=$false)]
+    $SecretKey = ""
 )
 
 # Empeche PowerShell 7+ de traiter stderr docker comme exception
@@ -181,5 +187,25 @@ switch ($Action) {
         docker stack rm my_app 2>$null
         Start-Sleep 10
         Write-Host "Done" -ForegroundColor Green
+    }
+
+    "blue-green-switch" {
+        Write-Host "Bascule Blue-Green vers $TargetColor..." -ForegroundColor Yellow
+        $confPath = "nginx.conf"
+        $content = Get-Content $confPath
+        
+        if ($TargetColor -eq "green") {
+            $content = $content -replace 'set \$target_backend "app";', 'set $target_backend "app_green";'
+            Write-Host "Configuration Nginx mise à jour vers GREEN (app_green)." -ForegroundColor Green
+        } else {
+            $content = $content -replace 'set \$target_backend "app_green";', 'set $target_backend "app";'
+            Write-Host "Configuration Nginx mise à jour vers BLUE (app)." -ForegroundColor Green
+        }
+        
+        $content | Set-Content $confPath
+        
+        Write-Host "Rechargement de Nginx..."
+        docker service update --force my_app_nginx | Out-Null
+        Write-Host "Bascule effectuée." -ForegroundColor Green
     }
 }
