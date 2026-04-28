@@ -53,24 +53,39 @@ function Get-OpenBaoContainer {
 
 function Auto-Unseal {
     if (-not (Test-Path "openbao/.unseal-keys")) {
-        Write-Host "Pas de .unseal-keys -> Bao pas init. Lance .\init-bao.ps1 apres deploy." -ForegroundColor Yellow
+        Write-Host "Pas de .unseal-keys -> Bao pas init." -ForegroundColor Yellow
         return $false
     }
     $bao = Get-OpenBaoContainer
     if (-not $bao) { return $false }
 
-    $status = & docker exec -e BAO_ADDR=http://127.0.0.1:8200 $bao bao status 2>&1 | Out-String
-    if ($status -match "Sealed\s+false") {
-        Write-Host "Bao deja unsealed" -ForegroundColor Green
-        return $true
+    $statusRaw = & docker exec -e BAO_ADDR=http://127.0.0.1:8200 $bao bao status -format=json 2>&1 | Out-String
+    try {
+        $status = $statusRaw | ConvertFrom-Json
+        if ($status.initialized -eq $false) {
+            Write-Host "OpenBao est présent mais non INITIALISÉ." -ForegroundColor Yellow
+            return $false
+        }
+        if ($status.sealed -eq $false) {
+            Write-Host "Bao deja unsealed" -ForegroundColor Green
+            return $true
+        }
+    } catch {
+        # Si le status echoue, on tente quand meme l'unseal avec les cles dont on dispose
     }
 
     $keys = (Get-Content "openbao/.unseal-keys" -Raw).Trim() -split "`n"
     foreach ($k in $keys[0..2]) {
         & docker exec -e BAO_ADDR=http://127.0.0.1:8200 $bao bao operator unseal $k.Trim() 2>&1 | Out-Null
     }
-    Write-Host "Bao unsealed" -ForegroundColor Green
-    return $true
+
+    # Verif finale
+    $statusFinal = & docker exec -e BAO_ADDR=http://127.0.0.1:8200 $bao bao status -format=json 2>&1 | Out-String
+    if ($statusFinal -match '"sealed":\s*false') {
+        Write-Host "Bao unsealed" -ForegroundColor Green
+        return $true
+    }
+    return $false
 }
 
 switch ($Action) {
