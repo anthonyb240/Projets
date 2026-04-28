@@ -105,6 +105,16 @@ switch ($Action) {
         if (-not (Test-Path "openbao/role_id")) { Set-Content "openbao/role_id" "placeholder" -NoNewline }
         if (-not (Test-Path "openbao/secret_id")) { Set-Content "openbao/secret_id" "placeholder" -NoNewline }
 
+        # Cleanup state pollue d'anciens runs (network/stack residuels)
+        docker stack rm my_app 2>$null | Out-Null
+        Start-Sleep 12
+        $oldNet = docker network ls --filter "name=my_app_frontend" -q
+        if ($oldNet) {
+            Write-Host "Suppression network residuel..." -ForegroundColor Yellow
+            docker network rm my_app_frontend 2>$null | Out-Null
+            Start-Sleep 3
+        }
+
         # 1. Deploy stack initial (openbao + tout) - bao-agent va echouer auth, c'est OK
         Write-Host "Deploy stack initial..." -ForegroundColor Yellow
         docker stack deploy -c docker-stack.yml my_app
