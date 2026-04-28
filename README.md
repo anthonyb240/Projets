@@ -12,9 +12,6 @@ Application web de forum dediee a la communaute **Brawlhalla**, developpee avec 
    - [3.1 Descriptif de la pipeline](#31-descriptif-de-la-pipeline)
    - [3.2 Erreurs les plus grosses rencontrees](#32-erreurs-les-plus-grosses-rencontrees)
    - [3.3 Correctifs apportes](#33-correctifs-apportes)
-4. [Strategies de deploiement](#4-strategies-de-deploiement)
-   - [4.1 Rolling Update](#41-rolling-update)
-   - [4.2 Blue-Green Deployment](#42-blue-green-deployment)
 
 ---
 
@@ -327,21 +324,76 @@ docker compose up --build
 ##### Correctif 8 : Mise en place du self-hosted
 Nous avons mis en place un self-hosted runner GitHub Actions sur notre machine locale. Cela permet à la pipeline de piloter Swarm automatiquement à chaque git push. Nous avons du installer un agent github puis configurer le pipeline.yml afin de piloter Docker Swarm.
 
-## Stack technique
+---
 
-- **Backend** : Flask 3.1, Flask-SQLAlchemy, Flask-Login, Flask-WTF, Flask-Talisman
-- **Base de donnees** : SQLite
-- **Serveur** : Gunicorn
-- **Conteneurisation** : Docker + docker-compose
-- **CI/CD** : GitHub Actions
-- **Securite** : Gitleaks, TruffleHog, Flake8, Bandit, Semgrep, pip-audit, Trivy, Wapiti
+## 4. Déploiement avec Docker Swarm (Labs 5, 6, 7)
 
+### Contexte : abandon de Render
 
-- Lint flake8 : config.py pb de syntaxe ( espace ect)
+Render a été utilisé dans un premier temps pour héberger l'application. Cependant, le **free tier de Render ne permet plus l'accès SSH ni le déploiement via Docker Swarm**, et la mise en place d'un worker avec une VM tierce était trop complexe dans les délais impartis. Docker Swarm a donc été adopté en remplacement, ce qui constitue également une excellente introduction aux concepts de Kubernetes.
+
+> Docker Swarm est **obligatoire pour les labs 5, 6 et 7**. Les labs 8 et suivants sont optionnels (bonus/challenge).
+
+### Barème indicatif
+
+| Périmètre | Note approximative |
+|---|---|
+| Labs obligatoires uniquement | ~50% |
+| Obligatoires + bonus | ~80% |
+| Obligatoires + bonus + challenges | 100% |
 
 ---
 
-## 4. Strategies de deploiement
+### Lab 5 – Scalabilité
+
+**Objectif** : rendre l'application scalable avec plusieurs instances.
+
+**Obligatoire — 2 replicas via Docker Swarm :**
+
+Le fichier `docker-stack.yml` configure 2 replicas pour le service `app` :
+
+```yaml
+app:
+  image: ghcr.io/anthonyb240/projets:latest
+  deploy:
+    replicas: 2
+```
+
+Déploiement :
+```bash
+docker stack deploy -c docker-stack.yml my_app
+docker service ps my_app_app   # vérifier que les 2 instances tournent
+```
+
+**Bonus — Nginx comme reverse proxy :**
+
+Nginx est inclus dans le stack et distribue le trafic entre les 2 instances de l'application via le réseau overlay `frontend`. La configuration `nginx.conf` est montée en read-only.
+
+Pour observer la distribution des requêtes :
+```bash
+# Envoyer plusieurs requêtes et observer les logs de chaque réplica
+for i in {1..10}; do curl -s http://localhost:80 > /dev/null; done
+docker service logs my_app_app
+```
+
+**Challenge — Ajout / arrêt d'une instance à chaud :**
+
+```bash
+# Passer à 3 replicas
+docker service scale my_app_app=3
+
+# Revenir à 1 replica (l'app reste disponible)
+docker service scale my_app_app=1
+
+# Vérifier la stabilité
+docker service ps my_app_app
+```
+
+L'application continue de fonctionner pendant la mise à l'échelle grâce au load balancer interne de Swarm.
+
+---
+
+### Lab 6 – Stratégie de déploiement
 
 Nous avons implemente deux strategies majeures pour garantir la disponibilite et la stabilite des deploiements.
 
@@ -381,3 +433,94 @@ Cette strategie permet de faire tourner deux versions de l'application en parall
      .\manage-swarm.ps1 -Action blue-green-switch -TargetColor blue
      ```
 - **Avantage** : Le basculement est quasi-instantané et le retour en arriere est immediat en cas de bug critique detecte post-deploiement.
+---
+
+### Lab 7 – Gestion des secrets
+
+**Objectif** : comprendre la progression naturelle de la gestion des secrets, de l'injection simple aux solutions dynamiques.
+
+#### Étape 1 – Approche classique : injection au démarrage (obligatoire)
+
+Les secrets sont montés comme fichiers dans le conteneur via Docker Swarm secrets :
+
+```bash
+# Créer les secrets dans Swarm
+echo "ma-cle-secrete" | docker secret create SECRET_KEY -
+
+# Référencer dans docker-stack.yml
+secrets:
+  SECRET_KEY:
+    external: true
+```
+
+L'application les lit au démarrage. **Limite observée** : modifier un secret impose de redémarrer le service pour que le changement soit pris en compte, ce qui impacte la disponibilité.
+
+```bash
+# Démonstration de la limite
+docker secret rm SECRET_KEY
+echo "nouvelle-cle" | docker secret create SECRET_KEY -
+docker service update --force my_app_app   # restart obligatoire
+```
+
+#### Étape 2 – Agent OpenBao (bonus) : rotation sans restart
+
+Pour répondre aux limites de l'approche classique, un agent OpenBao est mis en place. Il récupère dynamiquement les secrets et les rend disponibles dans un fichier monté en volume partagé.
+
+Le fichier `docker-compose_openbao.yml` (et son équivalent dans `docker-stack.yml`) implémente cette architecture :
+
+```
+OpenBao (serveur) ──► bao-agent ──► /run/secrets-rendered/app.env
+                                              │
+                                         app (lit le fichier)
+                                    avec TTL de 15 secondes (SECRETS_TTL)
+```
+
+L'application relit le fichier toutes les 15 secondes (`SECRETS_TTL=15` dans `docker-stack.yml`), ce qui permet une rotation **partielle sans restart** du service principal.
+
+```bash
+# Démarrer OpenBao en mode dev
+docker compose -f docker-compose_openbao.yml up -d
+
+# Vérifier que les secrets sont bien rendus
+cat rendered/app.env
+```
+
+**Avantages par rapport à l'approche classique :**
+- Rotation des secrets sans redémarrage du service
+- Secrets jamais stockés dans les variables d'environnement (moins de surface d'exposition)
+- Gestion centralisée compatible avec les environnements modernes
+
+**Challenge — Rotation dynamique complète :**
+
+Aller plus loin avec des leases Vault/OpenBao à courte durée de vie, un audit log des accès aux secrets, et une révocation à la demande sans impact sur la disponibilité.
+
+---
+
+### Self-hosted runner GitHub Actions (lien avec la pipeline)
+
+Pour piloter Swarm automatiquement depuis la pipeline CI/CD, un **self-hosted runner** a été installé sur la machine locale hébergeant le Swarm. Cela permet au job de déploiement de la pipeline d'exécuter `docker stack deploy` directement sur le nœud manager, sans exposition SSH externe.
+
+```yaml
+# Dans pipeline.yml
+deploy:
+  runs-on: self-hosted
+  steps:
+    - name: Deploy to Swarm
+      run: docker stack deploy -c docker-stack.yml my_app
+```
+
+---
+
+## Stack technique
+
+- **Backend** : Flask 3.1, Flask-SQLAlchemy, Flask-Login, Flask-WTF, Flask-Talisman
+- **Base de donnees** : SQLite
+- **Serveur** : Gunicorn
+- **Conteneurisation** : Docker + docker-compose
+- **CI/CD** : GitHub Actions
+- **Securite** : Gitleaks, TruffleHog, Flake8, Bandit, Semgrep, pip-audit, Trivy, Wapiti
+
+
+## Difficulté deploiement 
+
+- Lint flake8 : config.py pb de syntaxe ( espace ect)
