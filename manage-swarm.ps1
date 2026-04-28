@@ -8,11 +8,11 @@ param (
     $Action = "status",
 
     [Parameter(Mandatory=$false)]
-    $SecretKey = "",
+    $FlaskSecretKey = "",
     [Parameter(Mandatory=$false)]
-    $ApiKey = "",
+    $UsernameDb = "",
     [Parameter(Mandatory=$false)]
-    $DbPassword = ""
+    $PasswordDb = ""
 )
 
 # Empeche PowerShell 7+ de traiter stderr docker comme exception
@@ -43,14 +43,14 @@ function Get-OpenBaoContainer {
 }
 
 function Bootstrap-OpenBao {
-    param($SK, $AK, $DBP, $BaoContainer)
+    param($FSK, $UDB, $PDB, $BaoContainer)
     Write-Host "Bootstrap OpenBao container=$BaoContainer..." -ForegroundColor Yellow
 
     $ErrorActionPreference = 'Continue'
     $PSNativeCommandUseErrorActionPreference = $false
 
     & docker exec -e BAO_ADDR=http://127.0.0.1:8200 -e BAO_TOKEN=root $BaoContainer `
-        bao kv put secret/forum/dev "SECRET_KEY=$SK" "API_KEY=$AK" "DB_PASSWORD=$DBP" 2>&1 | Out-Null
+        bao kv put secret/forum/dev "FLASK_SECRET_KEY=$FSK" "USERNAME_DB=$UDB" "PASSWORD_DB=$PDB" 2>&1 | Out-Null
 
     & docker exec -e BAO_ADDR=http://127.0.0.1:8200 -e BAO_TOKEN=root $BaoContainer `
         bao auth enable approle 2>&1 | Out-Null
@@ -94,10 +94,11 @@ switch ($Action) {
     }
 
     "deploy" {
-        # Defaults si args vides (CI fallback)
-        if (-not $SecretKey) { $SecretKey = "deploy-fallback-flask-key-32chars-1234567890" }
-        if (-not $ApiKey) { $ApiKey = "deploy-fallback-api-key" }
-        if (-not $DbPassword) { $DbPassword = "deploy-fallback-db-pass" }
+        # PAS de fallback: si secrets manquent on stop net (no clear-text default)
+        if (-not $FlaskSecretKey -or -not $UsernameDb -or -not $PasswordDb) {
+            Write-Error "Args requis: -FlaskSecretKey -UsernameDb -PasswordDb (depuis GitHub Secrets)"
+            exit 1
+        }
 
         if (-not (Check-Swarm)) {
             Write-Host "Init Swarm..." -ForegroundColor Yellow
@@ -139,7 +140,7 @@ switch ($Action) {
             Write-Error "Conteneur openbao introuvable"
             exit 1
         }
-        Bootstrap-OpenBao -SK $SecretKey -AK $ApiKey -DBP $DbPassword -BaoContainer $baoCt
+        Bootstrap-OpenBao -FSK $FlaskSecretKey -UDB $UsernameDb -PDB $PasswordDb -BaoContainer $baoCt
 
         # 4. Force recreate bao-agent pour relire role_id/secret_id frais
         Write-Host "Force redeploy bao-agent..." -ForegroundColor Yellow
@@ -181,15 +182,15 @@ switch ($Action) {
     }
 
     "rotate-bao" {
-        if (-not $SecretKey -or -not $ApiKey -or -not $DbPassword) {
-            Write-Error "Args requis: -SecretKey -ApiKey -DbPassword"
+        if (-not $FlaskSecretKey -or -not $UsernameDb -or -not $PasswordDb) {
+            Write-Error "Args requis: -FlaskSecretKey -UsernameDb -PasswordDb"
             return
         }
         $baoCt = Get-OpenBaoContainer
         if (-not $baoCt) { Write-Error "openbao non running"; return }
         Write-Host "Rotation via OpenBao..." -ForegroundColor Yellow
         docker exec -e BAO_ADDR=http://127.0.0.1:8200 -e BAO_TOKEN=root $baoCt `
-            bao kv put secret/forum/dev "SECRET_KEY=$SecretKey" "API_KEY=$ApiKey" "DB_PASSWORD=$DbPassword"
+            bao kv put secret/forum/dev "FLASK_SECRET_KEY=$FlaskSecretKey" "USERNAME_DB=$UsernameDb" "PASSWORD_DB=$PasswordDb"
         Write-Host "Agent re-render <5s, app re-read <15s. Aucun restart." -ForegroundColor Green
     }
 

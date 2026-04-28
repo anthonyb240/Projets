@@ -235,11 +235,7 @@ jobs:
 
       - name: Build de l'image Docker
         run: |
-          docker build \
-            --secret id=ctf_flag,src=<(echo "FLAG{test_ci_cd}") \
-            --secret id=db_password,src=<(echo "ci_test_password") \
-            --secret id=api_key,src=<(echo "ci_test_api_key") \
-            -t app-securisee:${{ github.sha }} .
+          docker build -t app-securisee:${{ github.sha }} .
 
       - name: Scan image Docker avec Trivy
         uses: aquasecurity/trivy-action@v0.35.0
@@ -271,13 +267,13 @@ jobs:
         run: |
           docker build -t app-securisee:latest -t ghcr.io/anthonyb240/projets:latest .
 
-      - name: Prepare rendered/app.env (secrets factices pour DAST)
+      - name: Prepare rendered/app.env (secrets factices DAST)
         run: |
           mkdir -p rendered
           cat > rendered/app.env <<EOF
-          SECRET_KEY=dast-test-flask-key-32chars-1234567890
-          API_KEY=dast-test-api-key
-          DB_PASSWORD=dast-test-db-password
+          FLASK_SECRET_KEY=dast-flask-key-32chars-1234567890
+          USERNAME_DB=dast-admin
+          PASSWORD_DB=dast-password-only-for-test
           EOF
           chmod -R 777 rendered
           ls -la rendered/
@@ -370,22 +366,28 @@ jobs:
 
       - name: Bootstrap OpenBao depuis GitHub Secrets
         env:
-          APP_SECRET_KEY: ${{ secrets.SECRET_KEY }}
-          APP_API_KEY: ${{ secrets.API_KEY }}
-          APP_DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          APP_FLASK_SECRET_KEY: ${{ secrets.FLASK_SECRET_KEY }}
+          APP_USERNAME_DB: ${{ secrets.USERNAME_DB }}
+          APP_PASSWORD_DB: ${{ secrets.PASSWORD_DB }}
         run: |
-          : "${APP_SECRET_KEY:=ci-fallback-flask-secret-key-32chars-1234567890}"
-          : "${APP_API_KEY:=ci-fallback-api-key}"
-          : "${APP_DB_PASSWORD:=ci-fallback-db-password}"
+          if [ -z "$APP_FLASK_SECRET_KEY" ] || [ -z "$APP_USERNAME_DB" ] || [ -z "$APP_PASSWORD_DB" ]; then
+            echo "FAIL: secrets GitHub manquants (FLASK_SECRET_KEY, USERNAME_DB, PASSWORD_DB)"
+            exit 1
+          fi
 
           BAO=$(docker ps -q --filter "name=my_app_openbao" | head -1)
           test -n "$BAO" || { echo "openbao container introuvable"; exit 1; }
 
+          # ::add-mask:: empeche secrets de leak dans logs CI si echo accidentel
+          echo "::add-mask::$APP_FLASK_SECRET_KEY"
+          echo "::add-mask::$APP_USERNAME_DB"
+          echo "::add-mask::$APP_PASSWORD_DB"
+
           docker exec -e BAO_ADDR=http://127.0.0.1:8200 -e BAO_TOKEN=root $BAO \
             bao kv put secret/forum/dev \
-              SECRET_KEY="$APP_SECRET_KEY" \
-              API_KEY="$APP_API_KEY" \
-              DB_PASSWORD="$APP_DB_PASSWORD"
+              FLASK_SECRET_KEY="$APP_FLASK_SECRET_KEY" \
+              USERNAME_DB="$APP_USERNAME_DB" \
+              PASSWORD_DB="$APP_PASSWORD_DB"
 
           docker exec -e BAO_ADDR=http://127.0.0.1:8200 -e BAO_TOKEN=root $BAO bao auth enable approle || true
 
@@ -490,29 +492,35 @@ jobs:
       - name: Verifier aucun secret en env conteneur app
         run: |
           C=$(docker ps -q --filter "name=my_app_app" | head -1)
-          LEAK=$(docker exec $C env | grep -E "^(SECRET_KEY|API_KEY|DB_PASSWORD)=" || true)
-          if [ -n "$LEAK" ]; then echo "FAIL leak"; echo "$LEAK"; exit 1; fi
+          LEAK=$(docker exec $C env | grep -E "^(FLASK_SECRET_KEY|USERNAME_DB|PASSWORD_DB)=" || true)
+          if [ -n "$LEAK" ]; then echo "FAIL leak"; exit 1; fi
           echo "OK aucun secret en env"
 
       - name: Verifier app lit via Bao
         run: |
           C=$(docker ps -q --filter "name=my_app_app" | head -1)
-          docker exec $C python -c "from secrets_manager import get_secret; assert get_secret('API_KEY'), 'API_KEY vide'; print('OK secrets lus')"
+          docker exec $C python -c "from secrets_manager import get_secret; assert get_secret('FLASK_SECRET_KEY'), 'vide'; assert get_secret('USERNAME_DB'), 'vide'; print('OK 3 secrets lus')"
 
       - name: Test rotation Bao sans restart Swarm
+        env:
+          APP_FLASK_SECRET_KEY: ${{ secrets.FLASK_SECRET_KEY }}
+          APP_PASSWORD_DB: ${{ secrets.PASSWORD_DB }}
         run: |
-          NEW="ROTATED_$(date +%s)"
+          NEW_USER="rotated-admin-$(date +%s)"
+          echo "::add-mask::$APP_FLASK_SECRET_KEY"
+          echo "::add-mask::$APP_PASSWORD_DB"
+
           BAO=$(docker ps -q --filter "name=my_app_openbao" | head -1)
           docker exec -e BAO_ADDR=http://127.0.0.1:8200 -e BAO_TOKEN=root $BAO \
             bao kv put secret/forum/dev \
-              SECRET_KEY="${{ secrets.SECRET_KEY }}" \
-              API_KEY="$NEW" \
-              DB_PASSWORD="${{ secrets.DB_PASSWORD }}"
+              FLASK_SECRET_KEY="$APP_FLASK_SECRET_KEY" \
+              USERNAME_DB="$NEW_USER" \
+              PASSWORD_DB="$APP_PASSWORD_DB"
 
           # Agent re-render <5s
           for i in $(seq 1 12); do
             sleep 5
-            if grep -q "API_KEY=$NEW" rendered/app.env; then
+            if grep -q "USERNAME_DB=$NEW_USER" rendered/app.env; then
               echo "Fichier rendu a jour ($i*5s)"
               break
             fi
@@ -521,9 +529,9 @@ jobs:
           # App re-read TTL 15s
           C=$(docker ps -q --filter "name=my_app_app" | head -1)
           for i in $(seq 1 6); do
-            READ=$(docker exec $C python -c "from secrets_manager import get_secret; print(get_secret('API_KEY'))")
+            READ=$(docker exec $C python -c "from secrets_manager import get_secret; print(get_secret('USERNAME_DB'))")
             echo "Tentative $i: lu='$READ'"
-            [ "$READ" = "$NEW" ] && echo "OK rotation propagee" && exit 0
+            [ "$READ" = "$NEW_USER" ] && echo "OK rotation propagee" && exit 0
             sleep 5
           done
 
@@ -570,9 +578,6 @@ jobs:
         run: |
           var_repo=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
           docker build \
-            --secret id=ctf_flag,src=<(echo "${{ secrets.CTF_FLAG }}") \
-            --secret id=db_password,src=<(echo "${{ secrets.DB_PASSWORD }}") \
-            --secret id=api_key,src=<(echo "${{ secrets.API_KEY }}") \
             -t ghcr.io/${var_repo}:latest \
             -t ghcr.io/${var_repo}:${{ github.sha }} .
           docker push ghcr.io/${var_repo}:latest
@@ -598,14 +603,22 @@ jobs:
       - name: Deploy stack + OpenBao + bootstrap
         shell: powershell
         env:
-          SECRET_KEY: ${{ secrets.SECRET_KEY }}
-          API_KEY: ${{ secrets.API_KEY }}
-          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          FLASK_SECRET_KEY: ${{ secrets.FLASK_SECRET_KEY }}
+          USERNAME_DB: ${{ secrets.USERNAME_DB }}
+          PASSWORD_DB: ${{ secrets.PASSWORD_DB }}
         run: |
-          $sk = if ($env:SECRET_KEY) { $env:SECRET_KEY } else { "deploy-fallback-flask-key-32chars-1234567890" }
-          $ak = if ($env:API_KEY)    { $env:API_KEY }    else { "deploy-fallback-api" }
-          $db = if ($env:DB_PASSWORD){ $env:DB_PASSWORD } else { "deploy-fallback-db" }
-          .\manage-swarm.ps1 -Action deploy -SecretKey $sk -ApiKey $ak -DbPassword $db
+          if (-not $env:FLASK_SECRET_KEY -or -not $env:USERNAME_DB -or -not $env:PASSWORD_DB) {
+            Write-Error "GitHub Secrets manquants: FLASK_SECRET_KEY, USERNAME_DB, PASSWORD_DB"
+            exit 1
+          }
+          # Mask explicit pour eviter leak via Write-Host accidentel
+          Write-Host "::add-mask::$env:FLASK_SECRET_KEY"
+          Write-Host "::add-mask::$env:USERNAME_DB"
+          Write-Host "::add-mask::$env:PASSWORD_DB"
+          .\manage-swarm.ps1 -Action deploy `
+            -FlaskSecretKey $env:FLASK_SECRET_KEY `
+            -UsernameDb $env:USERNAME_DB `
+            -PasswordDb $env:PASSWORD_DB
 
       - name: Status final
         if: always()

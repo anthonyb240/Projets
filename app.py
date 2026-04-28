@@ -795,8 +795,8 @@ def health():
 
     # Check fichiers critiques / config (via secrets_manager)
     from secrets_manager import get_secret
-    if not get_secret("SECRET_KEY"):
-        errors.append("missing SECRET_KEY")
+    if not get_secret("FLASK_SECRET_KEY"):
+        errors.append("missing FLASK_SECRET_KEY")
 
     status_code = 200 if not errors else 400
 

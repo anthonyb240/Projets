@@ -7,7 +7,7 @@ load_dotenv(os.path.join(basedir, '.env'))
 
 
 class Config:
-    SECRET_KEY = get_secret('SECRET_KEY')
+    SECRET_KEY = get_secret('FLASK_SECRET_KEY')
     SQLALCHEMY_DATABASE_URI = (
         os.environ.get('SQLALCHEMY_DATABASE_URI')
         or 'sqlite:///' + os.path.join(basedir, 'forum.db')

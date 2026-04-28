@@ -1,6 +1,7 @@
 """Initialize the database with default categories."""
 from app import app, db
 from models import Category, User
+from secrets_manager import get_secret
 
 categories = [
     {
@@ -60,15 +61,21 @@ with app.app_context():
         print('[INFO] Les categories existent deja.')
 
     if User.query.count() == 0:
-        admin_user = User(
-            username='admin',
-            email='admin@valhalla.fr',
-            avatar_color='#FDCB6E',
-            is_admin=True
-        )
-        admin_user.set_password('AdminBrawlhalla123!')
-        db.session.add(admin_user)
-        db.session.commit()
-        print('[OK] Compte administrateur cree : admin / AdminBrawlhalla123!')
+        admin_username = get_secret('USERNAME_DB')
+        admin_password = get_secret('PASSWORD_DB')
+        if not admin_username or not admin_password:
+            print('[WARN] USERNAME_DB/PASSWORD_DB indisponibles (Bao pas pret?). Skip creation admin.')
+        else:
+            admin_user = User(
+                username=admin_username,
+                email='admin@valhalla.fr',
+                avatar_color='#FDCB6E',
+                is_admin=True
+            )
+            admin_user.set_password(admin_password)
+            db.session.add(admin_user)
+            db.session.commit()
+            # NE PAS LOGGER LE PASSWORD
+            print(f'[OK] Compte administrateur cree (username={admin_username})')
 
     print('[OK] Base de donnees initialisee.')
