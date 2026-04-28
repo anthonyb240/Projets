@@ -15,6 +15,12 @@ param (
     $DbPassword = ""
 )
 
+# Empeche PowerShell 7+ de traiter stderr docker comme exception
+$ErrorActionPreference = 'Continue'
+if ($PSVersionTable.PSVersion.Major -ge 7) {
+    $PSNativeCommandUseErrorActionPreference = $false
+}
+
 function Check-Swarm {
     $status = docker info --format '{{.Swarm.LocalNodeState}}'
     return $status -eq "active"
