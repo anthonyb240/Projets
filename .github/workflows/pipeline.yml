@@ -349,7 +349,7 @@ jobs:
           docker push ghcr.io/${var_repo}:${{ github.sha }}
 
   # ============================================================
-  # Lab 6 : Deploy local complet (stack Swarm + OpenBao + agent)
+  # Lab 6 : Deploy local complet (stack Swarm + OpenBao + agent)#
   # ============================================================
 
   swarm-deploy:
