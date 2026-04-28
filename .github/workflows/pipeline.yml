@@ -349,7 +349,7 @@ jobs:
           docker push ghcr.io/${var_repo}:${{ github.sha }}
 
   # ============================================================
-  # Lab 7 : Deploy local complet (stack Swarm + OpenBao + agent)
+  # Lab 6 : Deploy local complet (stack Swarm + OpenBao + agent)
   # ============================================================
 
   swarm-deploy:
@@ -392,6 +392,16 @@ jobs:
           }
 
           Write-Host "::add-mask::$env:SECRETS_PASSPHRASE"
+
+          # Debug temporaire: comparer ce hash avec ton hash local
+          # Hash attendu local:
+          # 8a14050bb8d7ee8f3bdd6272fb6bd1201606329e2403200339658f7eb664a0c4
+          $sha = [System.Security.Cryptography.SHA256]::Create()
+          $bytes = [Text.Encoding]::UTF8.GetBytes($env:SECRETS_PASSPHRASE)
+          $hashBytes = $sha.ComputeHash($bytes)
+          $secretHash = -join ($hashBytes | ForEach-Object { $_.ToString("x2") })
+
+          Write-Host "SECRETS_PASSPHRASE_SHA256=$secretHash"
 
           $opensslCandidates = @(
             "openssl",
