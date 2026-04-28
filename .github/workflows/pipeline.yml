@@ -367,27 +367,6 @@ jobs:
         run: |
           docker build -t app-securisee:latest -t "ghcr.io/anthonyb240/projets:latest" .
 
-      - name: Install OpenSSL on Windows runner
-        shell: powershell
-        run: |
-          if (Get-Command openssl -ErrorAction SilentlyContinue) {
-            openssl version
-            exit 0
-          }
-
-          winget install ShiningLight.OpenSSL --silent --accept-package-agreements --accept-source-agreements
-
-          $env:PATH += ";C:\Program Files\OpenSSL-Win64\bin"
-
-          if (Test-Path "C:\Program Files\OpenSSL-Win64\bin\openssl.exe") {
-            & "C:\Program Files\OpenSSL-Win64\bin\openssl.exe" version
-          } elseif (Get-Command openssl -ErrorAction SilentlyContinue) {
-            openssl version
-          } else {
-            Write-Error "OpenSSL installe mais introuvable dans le PATH."
-            exit 1
-          }
-
       - name: Deploy stack
         shell: powershell
         run: .\manage-swarm.ps1 -Action deploy
@@ -397,7 +376,6 @@ jobs:
         env:
           SECRETS_PASSPHRASE: ${{ secrets.SECRETS_PASSPHRASE }}
         run: |
-          # Skip si deja init
           if (Test-Path "openbao/.unseal-keys") {
             Write-Host "Bao deja init, skip" -ForegroundColor Green
             exit 0
@@ -417,9 +395,9 @@ jobs:
 
           $opensslCandidates = @(
             "openssl",
+            "C:\Program Files\Git\usr\bin\openssl.exe",
             "C:\Program Files\OpenSSL-Win64\bin\openssl.exe",
-            "C:\Program Files\OpenSSL-Win32\bin\openssl.exe",
-            "C:\Program Files\Git\usr\bin\openssl.exe"
+            "C:\Program Files\OpenSSL-Win32\bin\openssl.exe"
           )
 
           $openssl = $null
@@ -433,7 +411,7 @@ jobs:
           }
 
           if (-not $openssl) {
-            Write-Error "OpenSSL introuvable sur le runner."
+            Write-Error "OpenSSL introuvable. Installe Git for Windows ou OpenSSL sur le runner."
             exit 1
           }
 
@@ -447,12 +425,11 @@ jobs:
             -pass "pass:$env:SECRETS_PASSPHRASE"
 
           if ($LASTEXITCODE -ne 0) {
-            Write-Error "Dechiffrement echoue (passphrase invalide?)"
+            Write-Error "Dechiffrement echoue. Passphrase invalide ou secrets.enc incompatible."
             Remove-Item $tmp -Force -ErrorAction SilentlyContinue
             exit 1
           }
 
-          # Parse KEY=VALUE
           $vars = @{}
 
           Get-Content $tmp | ForEach-Object {
@@ -484,7 +461,6 @@ jobs:
             -UsernameDb $vars['USERNAME_DB'] `
             -PasswordDb $vars['PASSWORD_DB']
 
-          # Re-deploy pour finaliser
           .\manage-swarm.ps1 -Action deploy
 
       - name: Status final
