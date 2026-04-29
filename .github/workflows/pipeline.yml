@@ -260,6 +260,9 @@ jobs:
     name: DAST - Wapiti (Simulation Swarm)
     runs-on: ubuntu-latest
     needs: [docker-build-scan]
+    if: |
+      always() &&
+      needs.docker-build-scan.result == 'success'
     steps:
       - uses: actions/checkout@v4
 
@@ -329,6 +332,9 @@ jobs:
     name: Build & Push GHCR
     needs: [docker-build-scan]
     runs-on: ubuntu-latest
+    if: |
+      always() &&
+      needs.docker-build-scan.result == 'success'
     permissions:
       contents: read
       packages: write
@@ -349,7 +355,7 @@ jobs:
           docker push ghcr.io/${var_repo}:${{ github.sha }}
 
   # ============================================================
-  # Lab 6 : Deploy local complet (stack Swarm + OpenBao + agent)
+  # Lab 6 : Deploy complet (stack Swarm + OpenBao + agent)
   # ============================================================
 
   swarm-deploy:
@@ -357,7 +363,9 @@ jobs:
     needs: docker-push
     runs-on: self-hosted
     environment: render_api
-
+    if: |
+      always() &&
+      needs.docker-push.result == 'success'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
