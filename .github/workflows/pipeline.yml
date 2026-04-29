@@ -8,7 +8,7 @@ on:
 
 jobs:
   # ============================================================
-  # Job 0 : Detecter les changements de fichiers Python#
+  # Job 0 : Detecter les changements de fichiers Python
   # ============================================================
   changes:
     name: Detect changes
