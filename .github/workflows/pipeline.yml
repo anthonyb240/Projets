@@ -28,10 +28,12 @@ jobs:
             python:
               - '**/*.py'
               - 'requirements.txt'
+              - '.github/workflows/pipeline.yml'
             docker:
               - 'Dockerfile'
               - 'requirements.txt'
               - '.dockerignore'
+              - '.github/workflows/pipeline.yml'
 
   # ============================================================
   # Lab 1 : Qualite & Secrets (jobs paralleles)
@@ -229,7 +231,7 @@ jobs:
     needs: [trivy-fs, changes]
     if: |
       always() &&
-      !contains(needs.trivy-fs.result, 'failure')
+      !contains(needs['trivy-fs'].result, 'failure')
     steps:
       - uses: actions/checkout@v4
 
