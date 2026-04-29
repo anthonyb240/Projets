@@ -70,7 +70,7 @@ jobs:
     name: Lint - Flake8
     runs-on: ubuntu-latest
     environment: render_api
-    needs: [gitleaks]
+    needs: [gitleaks, changes]
     if: needs.changes.outputs.python == 'true'
     steps:
       - uses: actions/checkout@v4
